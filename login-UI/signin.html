@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sign In</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="auth-container">
+  <div class="auth-card">
+
+    <div class="icon-box">
+      ⬚
+    </div>
+
+    <h2>Welcome Back</h2>
+    <p class="subtitle">Sign in to access your barcode scanner</p>
+
+    <label>Email</label>
+    <input type="email" placeholder="you@example.com" />
+
+    <div class="password-row">
+      <label>Password</label>
+      <a href="#" class="link" onclick="forgotPassword()">Forgot password?</a>
+    </div>
+
+    <input type="password" placeholder="••••••••" />
+
+    <button class="primary-btn" onclick="signIn()">Sign In</button>
+
+    <p class="footer-text">
+      Don't have an account?
+      <!-- ✅ FIXED LINK -->
+      <a href="signup.html" class="link">Sign Up</a>
+    </p>
+
+  </div>
+</div>
+
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+<script src="auth.js"></script>
+</body>
+</html>

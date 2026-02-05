@@ -1,0 +1,422 @@
+/* ================= RESET ================= */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+body {
+  background: #f6f8fb;
+  color: #0f172a;
+}
+
+/* ================= HEADER ================= */
+.header {
+  background: #ffffff;
+  padding: 14px 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #14b8a6;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-right {
+  display: flex;
+  gap: 10px;
+}
+
+/* ================= BUTTONS ================= */
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: #f3f4f6;
+}
+
+.logout-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  cursor: pointer;
+}
+
+.logout-btn:hover {
+  background: #f3f4f6;
+}
+
+/* ================= LAYOUT ================= */
+.container {
+  max-width: 1100px;
+  margin: 24px auto;
+  padding: 0 16px;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 22px;
+  margin-bottom: 22px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+}
+
+/* ================= SCAN BUTTON (SHINY UPGRADE) ================= */
+.scan-btn {
+  width: 100%;
+  padding: 15px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #14b8a6, #0ea5e9);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  box-shadow: 0 10px 26px rgba(14, 165, 233, 0.35);
+  transition: all 0.25s ease;
+}
+
+.scan-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 40px rgba(14, 165, 233, 0.45);
+  background: linear-gradient(135deg, #0f766e, #0284c7);
+}
+
+.scan-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 8px 18px rgba(14, 165, 233, 0.35);
+}
+
+/* ================= INPUT + SAVE ================= */
+.divider {
+  text-align: center;
+  margin: 16px 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.manual-row {
+  display: flex;
+  gap: 12px;
+}
+
+.manual-row input {
+  flex: 1;
+  padding: 13px;
+  border-radius: 14px;
+  border: 1px solid #d1d5db;
+}
+
+/* ================= SAVE BUTTON (SHINY UPGRADE) ================= */
+.save-btn {
+  padding: 13px 22px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #14b8a6, #0ea5e9);
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 500;
+  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.35);
+  transition: all 0.25s ease;
+}
+
+.save-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 30px rgba(14, 165, 233, 0.45);
+  background: linear-gradient(135deg, #0f766e, #0284c7);
+}
+
+.save-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 6px 14px rgba(14, 165, 233, 0.25);
+}
+
+/* ================= TABS ================= */
+.tabs {
+  display: flex;
+  background: #eaeef3;
+  border-radius: 14px;
+  padding: 4px;
+  margin-bottom: 20px;
+}
+
+.tab {
+  flex: 1;
+  padding: 10px;
+  border-radius: 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.tab.active {
+  background: #ffffff;
+}
+
+/* ================= TABLE ================= */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 14px 10px;
+  border-bottom: 1px solid #e5e7eb;
+  text-align: left;
+}
+
+.delete {
+  cursor: pointer;
+}
+
+.delete:hover {
+  color: #dc2626;
+}
+
+/* ================= DELETE SELECTED BUTTON ================= */
+.delete-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 12px;
+  background: #ef4444;
+  color: #ffffff;
+  border: none;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(239, 68, 68, 0.25);
+  transition: all 0.2s ease;
+}
+
+.delete-btn:hover {
+  background: #dc2626;
+  box-shadow: 0 10px 26px rgba(220, 38, 38, 0.35);
+  transform: translateY(-1px);
+}
+
+/* ================= UTIL ================= */
+.hidden {
+  display: none !important;
+}
+
+.chip {
+  background: #f1f5f9;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  margin-right: 6px;
+}
+
+/* =====================================================
+   🎥 CAMERA UI — PREMIUM CLEAN VERSION
+   ===================================================== */
+
+/* Overlay background */
+.scanner-overlay {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at top, #f8fafc, #e5e7eb);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Main scanner container */
+.scanner-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  max-width: 360px;
+  width: 100%;
+  padding: 18px;
+}
+
+/* Camera frame */
+.scanner-frame {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  border-radius: 22px;
+  overflow: hidden;
+  background: #000;
+  position: relative;
+  box-shadow:
+    0 20px 60px rgba(0,0,0,0.25),
+    inset 0 0 0 2px rgba(255,255,255,0.15);
+}
+
+/* Video fills perfectly */
+#reader,
+#reader video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 22px;
+}
+
+/* Remove html5-qrcode junk */
+#reader canvas {
+  display: none !important;
+}
+
+/* ✨ Barcode focus frame */
+.scanner-frame::after {
+  content: "";
+  position: absolute;
+  inset: 18%;
+  border-radius: 14px;
+  border: 2px dashed rgba(255,255,255,0.75);
+  pointer-events: none;
+}
+
+/* Title */
+.scanner-title {
+  margin-top: 10px;
+  font-size: 18px;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Hint text */
+.scanner-hint {
+  font-size: 14px;
+  color: #64748b;
+  text-align: center;
+  max-width: 260px;
+}
+
+/* Buttons container */
+.scanner-actions {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+/* Close button — floating */
+.scanner-close {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  color: #ffffff;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  z-index: 11000;
+  transition: all 0.2s ease;
+}
+
+.scanner-close:hover {
+  background: rgba(220,38,38,0.9);
+  transform: scale(1.05);
+}
+
+/* Make Try Again look secondary */
+.scanner-actions .outline-btn {
+  padding: 12px 18px;
+  border-radius: 14px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.scanner-actions .outline-btn:hover {
+  background: #f1f5f9;
+}
+
+/* Save button already shiny — slight boost */
+.scanner-actions .save-btn {
+  padding: 12px 22px;
+}
+
+/* ================= EXCEL BUTTON ================= */
+.excel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #14b8a6, #0ea5e9);
+  color: #ffffff;
+  border: none;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(20, 184, 166, 0.25);
+  transition: all 0.25s ease;
+}
+
+.excel-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px rgba(14, 165, 233, 0.35);
+}
+
+/* ================= CARD HEADER ================= */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* ================= NOTIFICATION ================= */
+.notify-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20000;
+}
+
+.notify-box {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px 28px;
+  max-width: 360px;
+  text-align: center;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+}
+
+.notify-btn {
+  padding: 10px 26px;
+  border-radius: 10px;
+  border: none;
+  background: #14b8a6;
+  color: white;
+  cursor: pointer;
+}
