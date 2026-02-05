@@ -7,6 +7,9 @@ const supabaseClient = window.supabase.createClient(
   SUPABASE_ANON_KEY
 );
 
+// 🔴 CHANGE THIS to your GitHub Pages base URL
+const BASE_URL = "https://yourusername.github.io/Barcode-scan";
+
 // ================= SIGN UP =================
 async function signUp() {
   const username = document.querySelector('input[type="text"]').value.trim();
@@ -23,8 +26,9 @@ async function signUp() {
     password,
     options: {
       data: { username },
-      // 🔑 IMPORTANT: redirect AFTER email verification
-      emailRedirectTo: "http://127.0.0.1:5500/login-UI/signin.html"
+
+      // ✅ FIXED: GitHub Pages redirect
+      emailRedirectTo: `${BASE_URL}/login-UI/signin.html`
     }
   });
 
@@ -62,8 +66,17 @@ async function signIn() {
     return;
   }
 
-  // ✅ ALWAYS redirect to dashboard index
-  window.location.href = "../dashboard-UI/";
+  // ✅ SAVE LOGIN STATE (THIS FIXES THE LOOP)
+  localStorage.setItem(
+    "user",
+    JSON.stringify({
+      id: data.user.id,
+      email: data.user.email
+    })
+  );
+
+  // ✅ REDIRECT TO DASHBOARD FILE (NOT FOLDER)
+  window.location.href = "../dashboard-UI/index.html";
 }
 
 // ================= FORGOT PASSWORD =================
@@ -76,7 +89,8 @@ async function forgotPassword() {
   }
 
   const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-    redirectTo: "http://127.0.0.1:5500/login-UI/signin.html"
+    // ✅ FIXED: GitHub Pages redirect
+    redirectTo: `${BASE_URL}/login-UI/signin.html`
   });
 
   if (error) {
