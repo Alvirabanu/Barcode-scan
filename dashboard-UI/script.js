@@ -265,6 +265,60 @@ async function loadCommonSummary() {
   });
 }
 
+// ================= DOWNLOAD COMMON SUMMARY EXCEL =================
+async function downloadCommonSummaryExcel() {
+  const { data, error } = await supabaseClient
+    .from("user_scans")
+    .select("barcode, quantity, user_id");
+
+  if (error || !data || !data.length) {
+    showNotify("No data to export");
+    return;
+  }
+
+  const summary = {};
+
+  data.forEach(row => {
+    if (!summary[row.barcode]) {
+      summary[row.barcode] = {
+        users: {},
+        total: 0
+      };
+    }
+
+    const username =
+      row.user_id === currentUserId
+        ? "you"
+        : userMap[row.user_id] || "unknown";
+
+    summary[row.barcode].users[username] =
+      (summary[row.barcode].users[username] || 0) + row.quantity;
+
+    summary[row.barcode].total += row.quantity;
+  });
+
+  const rows = Object.entries(summary).map(([barcode, info]) => {
+    const userCounts = Object.entries(info.users)
+      .map(([name, count]) => `${name}: ${count}`)
+      .join(", ");
+
+    return {
+      Barcode: barcode,
+      "User Counts": userCounts,
+      Total: info.total
+    };
+  });
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Common Summary");
+
+  // ✅ Important for mobile browsers
+  await new Promise(r => setTimeout(r, 0));
+
+  XLSX.writeFile(workbook, "common-summary.xlsx");
+}
+
 // ================= DELETE COMMON (SINGLE) =================
 async function deleteCommonBarcode(barcode) {
   const { error } = await supabaseClient
@@ -402,3 +456,4 @@ async function logout() {
 
 // ================= INIT =================
 loadUser();
+
