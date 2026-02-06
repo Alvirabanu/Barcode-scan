@@ -11,6 +11,7 @@ let currentUserId = null;
 let html5QrCode = null;
 let scannedCode = null;
 let userMap = {};
+let userReady = false; // ✅ ADDED
 
 // ================= 🔔 CUSTOM NOTIFICATION =================
 function showNotify(message) {
@@ -90,6 +91,8 @@ async function loadUser() {
   closeScanner(true);
   loadMyBarcodes();
   loadCommonSummary();
+
+  userReady = true; // ✅ ADDED
 }
 
 // ================= TABS =================
@@ -104,6 +107,12 @@ function showTab(tabName) {
 
 // ================= SAVE BARCODE =================
 async function saveBarcode() {
+  // ✅ ADDED (guard for mobile)
+  if (!userReady || !currentUserId) {
+    showNotify("Please wait, loading user...");
+    return;
+  }
+
   const input = document.getElementById("barcode-input");
   const barcode = input.value.trim();
 
@@ -305,7 +314,6 @@ async function openScanner() {
   scannedCode = null;
 
   try {
-    // 🔴 Ensure previous instance is cleared
     if (html5QrCode) {
       await html5QrCode.stop().catch(() => {});
       html5QrCode = null;
@@ -318,11 +326,8 @@ async function openScanner() {
       { fps: 10, qrbox: { width: 250, height: 150 } },
       (decodedText) => {
         scannedCode = decodedText;
-
-        // Stop camera after first scan
         html5QrCode.stop().catch(() => {});
         html5QrCode = null;
-
         showNotify(`Scanned: ${decodedText}`);
       }
     );
@@ -333,19 +338,24 @@ async function openScanner() {
   }
 }
 
-
 function tryAgain() {
   scannedCode = null;
   closeScanner(true);
   openScanner();
 }
 
-
 function saveScanned() {
+  // ✅ ADDED (guard)
+  if (!userReady) {
+    showNotify("Please wait, loading user...");
+    return;
+  }
+
   if (!scannedCode) {
     showNotify("No barcode detected yet");
     return;
   }
+
   document.getElementById("barcode-input").value = scannedCode;
   saveBarcode();
   closeScanner();
@@ -362,92 +372,11 @@ function closeScanner(force = false) {
   document.getElementById("scannerOverlay").classList.add("hidden");
 }
 
- 
-//excel my barcode//
-async function downloadMyBarcodesExcel() {
-  const { data, error } = await supabaseClient
-    .from("user_scans")
-    .select("barcode, quantity, created_at")
-    .eq("user_id", currentUserId)
-    .order("created_at", { ascending: false });
-
-  if (error || !data.length) {
-    showNotify("No data to export");
-    return;
-  }
-
-  const formatted = data.map(row => ({
-    Barcode: row.barcode,
-    Quantity: row.quantity,
-    "Last Scanned": new Date(row.created_at).toLocaleDateString()
-  }));
-
-  const worksheet = XLSX.utils.json_to_sheet(formatted);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "My Barcodes");
-
-  XLSX.writeFile(workbook, "my-barcodes.xlsx");
-}
-
-//excel common summary//
-async function downloadCommonSummaryExcel() {
-  const { data, error } = await supabaseClient
-    .from("user_scans")
-    .select("barcode, quantity, user_id");
-
-  if (error || !data.length) {
-    showNotify("No data to export");
-    return;
-  }
-
-  const summary = {};
-
-  data.forEach(row => {
-    if (!summary[row.barcode]) {
-      summary[row.barcode] = {
-        users: {},
-        total: 0
-      };
-    }
-
-    const username =
-      row.user_id === currentUserId
-        ? "you"
-        : userMap[row.user_id] || "unknown";
-
-    summary[row.barcode].users[username] =
-      (summary[row.barcode].users[username] || 0) + row.quantity;
-
-    summary[row.barcode].total += row.quantity;
-  });
-
-  const rows = Object.entries(summary).map(([barcode, info]) => {
-    const userCounts = Object.entries(info.users)
-      .map(([name, count]) => `${name}: ${count}`)
-      .join(", ");
-
-    return {
-      Barcode: barcode,
-      "User Counts": userCounts,
-      Total: info.total
-    };
-  });
-
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Common Summary");
-
-  XLSX.writeFile(workbook, "common-summary.xlsx");
-}
-
-//logout//
+// ================= LOGOUT =================
 async function logout() {
   await supabaseClient.auth.signOut();
-
-  // force-clear browser state
   localStorage.clear();
   sessionStorage.clear();
-
   window.location.href = "../login-UI/signin.html";
 }
 
