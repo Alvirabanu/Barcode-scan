@@ -12,6 +12,7 @@ let html5QrCode = null;
 let scannedCode = null;
 let userMap = {};
 let userReady = false; // ✅ ADDED
+let scannerReady = false; // ✅ ADD THIS LINE ONLY
 
 // ================= 🔔 CUSTOM NOTIFICATION =================
 function showNotify(message) {
@@ -308,6 +309,10 @@ async function deleteCommonSelected() {
 
 // ================= CAMERA =================
 async function openScanner() {
+  if (!userReady) {
+    showNotify("Please wait, loading user...");
+    return;
+  }
   const overlay = document.getElementById("scannerOverlay");
   overlay.classList.remove("hidden");
 
@@ -326,6 +331,7 @@ async function openScanner() {
       { fps: 10, qrbox: { width: 250, height: 150 } },
       (decodedText) => {
         scannedCode = decodedText;
+        scannerReady = true; // ✅ ADD
         html5QrCode.stop().catch(() => {});
         html5QrCode = null;
         // ✅ Just show barcode in input, don't block UI
@@ -341,11 +347,20 @@ async function openScanner() {
 
 function tryAgain() {
   scannedCode = null;
+  scannerReady = false; // ✅ ADD
   closeScanner(true);
   openScanner();
 }
 
 function saveScanned() {
+  if (!userReady) {
+    showNotify("Please wait, loading user...");
+    return;
+  }
+  if (!scannerReady) {
+    showNotify("Scan a barcode first");
+    return;
+  }
   // ✅ ADDED (guard)
   if (!userReady) {
     showNotify("Please wait, loading user...");
@@ -368,7 +383,11 @@ function closeScanner(force = false) {
     html5QrCode = null;
   }
 
-  if (force) scannedCode = null;
+  if (force) {
+    scannedCode = null;
+    scannerReady = false; // ✅ ADD
+    }
+
 
   document.getElementById("scannerOverlay").classList.add("hidden");
 }
@@ -383,4 +402,3 @@ async function logout() {
 
 // ================= INIT =================
 loadUser();
-
