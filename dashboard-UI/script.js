@@ -328,7 +328,8 @@ async function openScanner() {
         scannedCode = decodedText;
         html5QrCode.stop().catch(() => {});
         html5QrCode = null;
-        showNotify(`Scanned: ${decodedText}`);
+        // ✅ Just show barcode in input, don't block UI
+        document.getElementById("barcode-input").value = decodedText;
       }
     );
   } catch (err) {
@@ -382,3 +383,4 @@ async function logout() {
 
 // ================= INIT =================
 loadUser();
+
