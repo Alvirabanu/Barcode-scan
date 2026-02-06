@@ -27,11 +27,17 @@
 
     <input type="password" placeholder="••••••••" />
 
-    <button type="button" onclick="signIn()">Sign In</button>
+    <!-- ✅ FIXED: added class ONLY -->
+    <button
+      type="button"
+      class="primary-btn"
+      onclick="signIn()"
+    >
+      Sign In
+    </button>
 
     <p class="footer-text">
       Don't have an account?
-      <!-- ✅ FIXED LINK -->
       <a href="signup.html" class="link">Sign Up</a>
     </p>
 
@@ -42,5 +48,3 @@
 <script src="auth.js"></script>
 </body>
 </html>
-
-
