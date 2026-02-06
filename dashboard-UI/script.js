@@ -265,6 +265,35 @@ async function loadCommonSummary() {
   });
 }
 
+// ================= DOWNLOAD MY BARCODES EXCEL =================
+async function downloadMyBarcodesExcel() {
+  const { data, error } = await supabaseClient
+    .from("user_scans")
+    .select("barcode, quantity, created_at")
+    .eq("user_id", currentUserId)
+    .order("created_at", { ascending: false });
+
+  if (error || !data || !data.length) {
+    showNotify("No data to export");
+    return;
+  }
+
+  const formatted = data.map(row => ({
+    Barcode: row.barcode,
+    Quantity: row.quantity,
+    "Last Scanned": new Date(row.created_at).toLocaleDateString()
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(formatted);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "My Barcodes");
+
+  // ✅ Required for mobile browsers
+  await new Promise(r => setTimeout(r, 0));
+
+  XLSX.writeFile(workbook, "my-barcodes.xlsx");
+}
+
 // ================= DOWNLOAD COMMON SUMMARY EXCEL =================
 async function downloadCommonSummaryExcel() {
   const { data, error } = await supabaseClient
@@ -456,4 +485,5 @@ async function logout() {
 
 // ================= INIT =================
 loadUser();
+
 
