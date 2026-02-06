@@ -298,22 +298,48 @@ async function deleteCommonSelected() {
 }
 
 // ================= CAMERA =================
-function openScanner() {
-  document.getElementById("scannerOverlay").classList.remove("hidden");
+async function openScanner() {
+  const overlay = document.getElementById("scannerOverlay");
+  overlay.classList.remove("hidden");
+
   scannedCode = null;
 
-  html5QrCode = new Html5Qrcode("reader");
-  html5QrCode.start(
-    { facingMode: "environment" },
-    { fps: 10, qrbox: { width: 250, height: 150 } },
-    text => scannedCode = text
-  );
+  try {
+    // 🔴 Ensure previous instance is cleared
+    if (html5QrCode) {
+      await html5QrCode.stop().catch(() => {});
+      html5QrCode = null;
+    }
+
+    html5QrCode = new Html5Qrcode("reader");
+
+    await html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 250, height: 150 } },
+      (decodedText) => {
+        scannedCode = decodedText;
+
+        // Stop camera after first scan
+        html5QrCode.stop().catch(() => {});
+        html5QrCode = null;
+
+        showNotify(`Scanned: ${decodedText}`);
+      }
+    );
+  } catch (err) {
+    console.error("Camera error:", err);
+    showNotify("Camera permission denied or camera not available");
+    closeScanner(true);
+  }
 }
 
+
 function tryAgain() {
-  closeScanner();
+  scannedCode = null;
+  closeScanner(true);
   openScanner();
 }
+
 
 function saveScanned() {
   if (!scannedCode) {
@@ -330,8 +356,12 @@ function closeScanner(force = false) {
     html5QrCode.stop().catch(() => {});
     html5QrCode = null;
   }
+
+  if (force) scannedCode = null;
+
   document.getElementById("scannerOverlay").classList.add("hidden");
 }
+
  
 //excel my barcode//
 async function downloadMyBarcodesExcel() {
