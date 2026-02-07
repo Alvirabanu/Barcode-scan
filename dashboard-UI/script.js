@@ -12,25 +12,30 @@ let html5QrCode = null;
 let userMap = {};
 let userReady = false;
 
-// ================= 🔔 CUSTOM NOTIFICATION =================
+// ================= ✅ SCAN CONFIRMATION =================
+function showScanSuccess() {
+  const el = document.getElementById("scanSuccess");
+  if (!el) return;
+  el.classList.remove("hidden");
+  setTimeout(() => el.classList.add("hidden"), 900);
+}
+
+// ================= 🔔 NOTIFICATION =================
 function showNotify(message) {
   const overlay = document.getElementById("notifyOverlay");
   const text = document.getElementById("notifyMessage");
   if (!overlay || !text) return;
-
   text.textContent = message;
   overlay.classList.remove("hidden");
 }
 
 function closeNotify() {
-  const overlay = document.getElementById("notifyOverlay");
-  if (overlay) overlay.classList.add("hidden");
+  document.getElementById("notifyOverlay")?.classList.add("hidden");
 }
 
 // ================= 👤 PROFILE =================
 async function ensureProfile(user) {
   const username = user.user_metadata?.username || "unknown";
-
   const { data } = await supabaseClient
     .from("profiles")
     .select("id")
@@ -54,23 +59,6 @@ async function loadUsernames() {
   data?.forEach(u => (userMap[u.id] = u.username));
 }
 
-// ================= SELECT ALL (MY BARCODES) =================
-function toggleSelectAll(master) {
-  document
-    .querySelectorAll(".row-check")
-    .forEach(cb => (cb.checked = master.checked));
-}
-
-function syncSelectAll() {
-  const all = document.querySelectorAll(".row-check");
-  const checked = document.querySelectorAll(".row-check:checked");
-  const master = document.getElementById("selectAll");
-
-  if (master) {
-    master.checked = all.length && all.length === checked.length;
-  }
-}
-
 // ================= LOAD USER =================
 async function loadUser() {
   const { data } = await supabaseClient.auth.getUser();
@@ -81,48 +69,24 @@ async function loadUser() {
   }
 
   currentUserId = data.user.id;
-
   await ensureProfile(data.user);
   await loadUsernames();
 
-  const title = document.getElementById("dashboard-title");
-  if (title) {
-    title.textContent = `${userMap[currentUserId] || "User"} Dashboard`;
-  }
+  document.getElementById("dashboard-title").textContent =
+    `${userMap[currentUserId] || "User"} Dashboard`;
 
-  closeScanner(true);
   await loadMyBarcodes();
   await loadCommonSummary();
-
   userReady = true;
-}
-
-// ================= TABS =================
-function showTab(tabName, btnEl) {
-  document.getElementById("my").classList.add("hidden");
-  document.getElementById("common").classList.add("hidden");
-
-  document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
-
-  document.getElementById(tabName).classList.remove("hidden");
-
-  if (btnEl) btnEl.classList.add("active");
 }
 
 // ================= SAVE BARCODE =================
 async function saveBarcode() {
-  if (!userReady || !currentUserId) {
-    showNotify("Please wait, loading user...");
-    return;
-  }
+  if (!userReady) return;
 
   const input = document.getElementById("barcode-input");
-  const barcode = (input?.value || "").trim();
-
-  if (!barcode) {
-    showNotify("Please enter a barcode");
-    return;
-  }
+  const barcode = input.value.trim();
+  if (!barcode) return;
 
   const { data: existing } = await supabaseClient
     .from("user_scans")
@@ -142,262 +106,19 @@ async function saveBarcode() {
       .insert({ user_id: currentUserId, barcode, quantity: 1 });
   }
 
-  if (input) input.value = "";
-
+  input.value = "";
   await loadMyBarcodes();
   await loadCommonSummary();
 }
 
-// ================= DELETE SINGLE (MY) =================
-async function deleteBarcode(barcode) {
-  const { error } = await supabaseClient
-    .from("user_scans")
-    .delete()
-    .eq("user_id", currentUserId)
-    .eq("barcode", barcode);
-
-  if (error) {
-    showNotify("Delete failed");
-    return;
-  }
-
-  await loadMyBarcodes();
-  await loadCommonSummary();
-}
-
-// ================= BULK DELETE (MY) =================
-async function deleteSelected() {
-  const checked = document.querySelectorAll(".row-check:checked");
-
-  if (!checked.length) {
-    showNotify("No barcodes selected");
-    return;
-  }
-
-  const barcodes = Array.from(checked).map(cb => cb.dataset.barcode);
-
-  const { error } = await supabaseClient
-    .from("user_scans")
-    .delete()
-    .eq("user_id", currentUserId)
-    .in("barcode", barcodes);
-
-  if (error) {
-    showNotify("Failed to delete selected");
-    return;
-  }
-
-  showNotify("Selected barcodes deleted");
-  await loadMyBarcodes();
-  await loadCommonSummary();
-}
-
-// ================= LOAD MY BARCODES =================
-async function loadMyBarcodes() {
-  const tbody = document.getElementById("myBarcodesBody");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-
-  const { data } = await supabaseClient
-    .from("user_scans")
-    .select("*")
-    .eq("user_id", currentUserId)
-    .order("created_at", { ascending: false });
-
-  (data || []).forEach(row => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>
-        <input type="checkbox"
-          class="row-check"
-          data-barcode="${row.barcode}"
-          onchange="syncSelectAll()">
-        ${row.barcode}
-      </td>
-      <td>${row.quantity}</td>
-      <td>${new Date(row.created_at).toLocaleDateString()}</td>
-      <td>
-        <span class="delete" onclick="deleteBarcode('${row.barcode}')">🗑</span>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  syncSelectAll();
-}
-
-// ================= COMMON SUMMARY =================
-async function loadCommonSummary() {
-  const tbody = document.getElementById("commonSummaryBody");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-
-  const { data } = await supabaseClient
-    .from("user_scans")
-    .select("barcode, quantity, user_id");
-
-  const summary = {};
-
-  (data || []).forEach(row => {
-    if (!summary[row.barcode]) {
-      summary[row.barcode] = { total: 0, users: {} };
-    }
-    summary[row.barcode].total += row.quantity;
-    summary[row.barcode].users[row.user_id] =
-      (summary[row.barcode].users[row.user_id] || 0) + row.quantity;
-  });
-
-  Object.entries(summary).forEach(([barcode, info]) => {
-    const usersHtml = Object.entries(info.users)
-      .map(([uid, count]) => {
-        const name = uid === currentUserId ? "you" : userMap[uid] || "unknown";
-        return `<span class="chip">${name}: ${count}</span>`;
-      })
-      .join(" ");
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>
-        <input type="checkbox" class="common-check" data-barcode="${barcode}">
-        ${barcode}
-      </td>
-      <td>${usersHtml}</td>
-      <td>${info.total}</td>
-      <td>
-        <span class="delete" onclick="deleteCommonBarcode('${barcode}')">🗑</span>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-// ================= DOWNLOAD MY BARCODES EXCEL =================
-async function downloadMyBarcodesExcel() {
-  const { data, error } = await supabaseClient
-    .from("user_scans")
-    .select("barcode, quantity, created_at")
-    .eq("user_id", currentUserId)
-    .order("created_at", { ascending: false });
-
-  if (error || !data || !data.length) {
-    showNotify("No data to export");
-    return;
-  }
-
-  const formatted = data.map(row => ({
-    Barcode: row.barcode,
-    Quantity: row.quantity,
-    "Last Scanned": new Date(row.created_at).toLocaleDateString()
-  }));
-
-  const worksheet = XLSX.utils.json_to_sheet(formatted);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "My Barcodes");
-
-  await new Promise(r => setTimeout(r, 0));
-  XLSX.writeFile(workbook, "my-barcodes.xlsx");
-}
-
-// ================= DOWNLOAD COMMON SUMMARY EXCEL =================
-async function downloadCommonSummaryExcel() {
-  const { data, error } = await supabaseClient
-    .from("user_scans")
-    .select("barcode, quantity, user_id");
-
-  if (error || !data || !data.length) {
-    showNotify("No data to export");
-    return;
-  }
-
-  const summary = {};
-
-  data.forEach(row => {
-    if (!summary[row.barcode]) {
-      summary[row.barcode] = { users: {}, total: 0 };
-    }
-
-    const username =
-      row.user_id === currentUserId ? "you" : userMap[row.user_id] || "unknown";
-
-    summary[row.barcode].users[username] =
-      (summary[row.barcode].users[username] || 0) + row.quantity;
-
-    summary[row.barcode].total += row.quantity;
-  });
-
-  const rows = Object.entries(summary).map(([barcode, info]) => {
-    const userCounts = Object.entries(info.users)
-      .map(([name, count]) => `${name}: ${count}`)
-      .join(", ");
-
-    return {
-      Barcode: barcode,
-      "User Counts": userCounts,
-      Total: info.total
-    };
-  });
-
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Common Summary");
-
-  await new Promise(r => setTimeout(r, 0));
-  XLSX.writeFile(workbook, "common-summary.xlsx");
-}
-
-// ================= DELETE COMMON (SINGLE) =================
-async function deleteCommonBarcode(barcode) {
-  const { error } = await supabaseClient
-    .from("user_scans")
-    .delete()
-    .eq("barcode", barcode);
-
-  if (error) {
-    showNotify("Delete failed");
-    return;
-  }
-
-  await loadMyBarcodes();
-  await loadCommonSummary();
-}
-
-// ================= DELETE COMMON (BULK) =================
-async function deleteCommonSelected() {
-  const checked = document.querySelectorAll(".common-check:checked");
-
-  if (!checked.length) {
-    showNotify("No barcodes selected");
-    return;
-  }
-
-  const barcodes = Array.from(checked).map(cb => cb.dataset.barcode);
-
-  const { error } = await supabaseClient
-    .from("user_scans")
-    .delete()
-    .in("barcode", barcodes);
-
-  if (error) {
-    showNotify("Failed to delete selected");
-    return;
-  }
-
-  showNotify("Selected barcodes deleted");
-  await loadMyBarcodes();
-  await loadCommonSummary();
-}
-
-// ================= CAMERA (AUTO SAVE ON SCAN) =================
+// ================= CAMERA (STOP → SAVE → TICK → RESTART) =================
 async function openScanner() {
   if (!userReady) {
     showNotify("Please wait, loading user...");
     return;
   }
 
-  const overlay = document.getElementById("scannerOverlay");
-  if (overlay) overlay.classList.remove("hidden");
+  document.getElementById("scannerOverlay").classList.remove("hidden");
 
   try {
     if (html5QrCode) {
@@ -411,55 +132,93 @@ async function openScanner() {
       { facingMode: "environment" },
       { fps: 10, qrbox: { width: 250, height: 150 } },
       async (decodedText) => {
-  const input = document.getElementById("barcode-input");
-  if (input) input.value = decodedText;
 
-  // Save immediately
-  await saveBarcode();
+        // 1️⃣ TURN OFF CAMERA
+        await html5QrCode.stop().catch(() => {});
+        html5QrCode = null;
 
-  // ✅ Show confirmation tick
-  showScanSuccess();
+        // 2️⃣ SAVE BARCODE
+        document.getElementById("barcode-input").value = decodedText;
+        await saveBarcode();
 
-  // 🔁 Keep camera open — prevent duplicate rapid scans
-  await new Promise(r => setTimeout(r, 1200));
-}
+        // 3️⃣ SHOW ✅
+        showScanSuccess();
 
+        // 4️⃣ RESTART CAMERA AFTER SHORT DELAY
+        setTimeout(() => openScanner(), 900);
+      }
     );
   } catch (err) {
-    console.error("Camera error:", err);
-    showNotify("Camera permission denied or camera not available");
-    closeScanner(true);
+    console.error(err);
+    showNotify("Camera error or permission denied");
   }
 }
 
-function closeScanner(force = false) {
-  if (html5QrCode) {
-    html5QrCode.stop().catch(() => {});
-    html5QrCode = null;
-  }
+// ================= TABLES =================
+async function loadMyBarcodes() {
+  const tbody = document.getElementById("myBarcodesBody");
+  tbody.innerHTML = "";
 
-  const overlay = document.getElementById("scannerOverlay");
-  if (overlay) overlay.classList.add("hidden");
+  const { data } = await supabaseClient
+    .from("user_scans")
+    .select("*")
+    .eq("user_id", currentUserId)
+    .order("created_at", { ascending: false });
+
+  data?.forEach(row => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${row.barcode}</td>
+        <td>${row.quantity}</td>
+        <td>${new Date(row.created_at).toLocaleDateString()}</td>
+        <td>
+          <span class="delete" onclick="deleteBarcode('${row.barcode}')">🗑</span>
+        </td>
+      </tr>`;
+  });
 }
 
-function showScanSuccess() {
-  const el = document.getElementById("scanSuccess");
-  if (!el) return;
+async function loadCommonSummary() {
+  const tbody = document.getElementById("commonSummaryBody");
+  tbody.innerHTML = "";
 
-  el.classList.remove("hidden");
-  setTimeout(() => el.classList.add("hidden"), 900);
+  const { data } = await supabaseClient
+    .from("user_scans")
+    .select("barcode, quantity, user_id");
+
+  const summary = {};
+
+  data?.forEach(row => {
+    summary[row.barcode] = (summary[row.barcode] || 0) + row.quantity;
+  });
+
+  Object.entries(summary).forEach(([barcode, total]) => {
+    tbody.innerHTML += `
+      <tr>
+        <td>${barcode}</td>
+        <td>${total}</td>
+      </tr>`;
+  });
 }
 
+// ================= DELETE =================
+async function deleteBarcode(barcode) {
+  await supabaseClient
+    .from("user_scans")
+    .delete()
+    .eq("barcode", barcode)
+    .eq("user_id", currentUserId);
+
+  await loadMyBarcodes();
+  await loadCommonSummary();
+}
 
 // ================= LOGOUT =================
 async function logout() {
   await supabaseClient.auth.signOut();
   localStorage.clear();
-  sessionStorage.clear();
   window.location.href = "../login-UI/signin.html";
 }
 
 // ================= INIT =================
 loadUser();
-
-
