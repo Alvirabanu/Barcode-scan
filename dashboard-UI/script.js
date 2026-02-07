@@ -186,8 +186,10 @@ async function loadMyBarcodes() {
         <td>${row.quantity}</td>
         <td>${new Date(row.created_at).toLocaleDateString()}</td>
         <td>
-          <span class="delete" onclick="deleteBarcode('${row.barcode}')">🗑</span>
-        </td>
+  <span class="delete" onclick="editBarcodeCount('${row.barcode}', ${row.quantity})">✏️</span>
+  &nbsp;&nbsp;
+  <span class="delete" onclick="deleteBarcode('${row.barcode}')">🗑</span>
+</td>
       </tr>`;
   });
 }
@@ -235,3 +237,4 @@ async function logout() {
 
 // ================= INIT =================
 loadUser();
+
