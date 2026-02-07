@@ -9,10 +9,8 @@ const supabaseClient = window.supabase.createClient(
 
 let currentUserId = null;
 let html5QrCode = null;
-let scannedCode = null;
 let userMap = {};
-let userReady = false; // ✅ ADDED
-let scannerReady = false; // ✅ ADD THIS LINE ONLY
+let userReady = false;
 
 // ================= 🔔 CUSTOM NOTIFICATION =================
 function showNotify(message) {
@@ -25,7 +23,8 @@ function showNotify(message) {
 }
 
 function closeNotify() {
-  document.getElementById("notifyOverlay").classList.add("hidden");
+  const overlay = document.getElementById("notifyOverlay");
+  if (overlay) overlay.classList.add("hidden");
 }
 
 // ================= 👤 PROFILE =================
@@ -52,14 +51,14 @@ async function loadUsernames() {
     .select("id, username");
 
   userMap = {};
-  data?.forEach(u => userMap[u.id] = u.username);
+  data?.forEach(u => (userMap[u.id] = u.username));
 }
 
 // ================= SELECT ALL (MY BARCODES) =================
 function toggleSelectAll(master) {
   document
     .querySelectorAll(".row-check")
-    .forEach(cb => cb.checked = master.checked);
+    .forEach(cb => (cb.checked = master.checked));
 }
 
 function syncSelectAll() {
@@ -86,36 +85,39 @@ async function loadUser() {
   await ensureProfile(data.user);
   await loadUsernames();
 
-  document.getElementById("dashboard-title").textContent =
-    `${userMap[currentUserId]} Dashboard`;
+  const title = document.getElementById("dashboard-title");
+  if (title) {
+    title.textContent = `${userMap[currentUserId] || "User"} Dashboard`;
+  }
 
   closeScanner(true);
-  loadMyBarcodes();
-  loadCommonSummary();
+  await loadMyBarcodes();
+  await loadCommonSummary();
 
-  userReady = true; // ✅ ADDED
+  userReady = true;
 }
 
 // ================= TABS =================
-function showTab(tabName) {
+function showTab(tabName, btnEl) {
   document.getElementById("my").classList.add("hidden");
   document.getElementById("common").classList.add("hidden");
 
   document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+
   document.getElementById(tabName).classList.remove("hidden");
-  event.target.classList.add("active");
+
+  if (btnEl) btnEl.classList.add("active");
 }
 
 // ================= SAVE BARCODE =================
 async function saveBarcode() {
-  // ✅ ADDED (guard for mobile)
   if (!userReady || !currentUserId) {
     showNotify("Please wait, loading user...");
     return;
   }
 
   const input = document.getElementById("barcode-input");
-  const barcode = input.value.trim();
+  const barcode = (input?.value || "").trim();
 
   if (!barcode) {
     showNotify("Please enter a barcode");
@@ -140,9 +142,10 @@ async function saveBarcode() {
       .insert({ user_id: currentUserId, barcode, quantity: 1 });
   }
 
-  input.value = "";
-  loadMyBarcodes();
-  loadCommonSummary();
+  if (input) input.value = "";
+
+  await loadMyBarcodes();
+  await loadCommonSummary();
 }
 
 // ================= DELETE SINGLE (MY) =================
@@ -158,8 +161,8 @@ async function deleteBarcode(barcode) {
     return;
   }
 
-  loadMyBarcodes();
-  loadCommonSummary();
+  await loadMyBarcodes();
+  await loadCommonSummary();
 }
 
 // ================= BULK DELETE (MY) =================
@@ -185,13 +188,15 @@ async function deleteSelected() {
   }
 
   showNotify("Selected barcodes deleted");
-  loadMyBarcodes();
-  loadCommonSummary();
+  await loadMyBarcodes();
+  await loadCommonSummary();
 }
 
 // ================= LOAD MY BARCODES =================
 async function loadMyBarcodes() {
   const tbody = document.getElementById("myBarcodesBody");
+  if (!tbody) return;
+
   tbody.innerHTML = "";
 
   const { data } = await supabaseClient
@@ -200,7 +205,7 @@ async function loadMyBarcodes() {
     .eq("user_id", currentUserId)
     .order("created_at", { ascending: false });
 
-  data.forEach(row => {
+  (data || []).forEach(row => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>
@@ -225,6 +230,8 @@ async function loadMyBarcodes() {
 // ================= COMMON SUMMARY =================
 async function loadCommonSummary() {
   const tbody = document.getElementById("commonSummaryBody");
+  if (!tbody) return;
+
   tbody.innerHTML = "";
 
   const { data } = await supabaseClient
@@ -233,7 +240,7 @@ async function loadCommonSummary() {
 
   const summary = {};
 
-  data.forEach(row => {
+  (data || []).forEach(row => {
     if (!summary[row.barcode]) {
       summary[row.barcode] = { total: 0, users: {} };
     }
@@ -247,7 +254,8 @@ async function loadCommonSummary() {
       .map(([uid, count]) => {
         const name = uid === currentUserId ? "you" : userMap[uid] || "unknown";
         return `<span class="chip">${name}: ${count}</span>`;
-      }).join(" ");
+      })
+      .join(" ");
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -288,9 +296,7 @@ async function downloadMyBarcodesExcel() {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "My Barcodes");
 
-  // ✅ Required for mobile browsers
   await new Promise(r => setTimeout(r, 0));
-
   XLSX.writeFile(workbook, "my-barcodes.xlsx");
 }
 
@@ -309,16 +315,11 @@ async function downloadCommonSummaryExcel() {
 
   data.forEach(row => {
     if (!summary[row.barcode]) {
-      summary[row.barcode] = {
-        users: {},
-        total: 0
-      };
+      summary[row.barcode] = { users: {}, total: 0 };
     }
 
     const username =
-      row.user_id === currentUserId
-        ? "you"
-        : userMap[row.user_id] || "unknown";
+      row.user_id === currentUserId ? "you" : userMap[row.user_id] || "unknown";
 
     summary[row.barcode].users[username] =
       (summary[row.barcode].users[username] || 0) + row.quantity;
@@ -342,9 +343,7 @@ async function downloadCommonSummaryExcel() {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Common Summary");
 
-  // ✅ Important for mobile browsers
   await new Promise(r => setTimeout(r, 0));
-
   XLSX.writeFile(workbook, "common-summary.xlsx");
 }
 
@@ -360,8 +359,8 @@ async function deleteCommonBarcode(barcode) {
     return;
   }
 
-  loadMyBarcodes();
-  loadCommonSummary();
+  await loadMyBarcodes();
+  await loadCommonSummary();
 }
 
 // ================= DELETE COMMON (BULK) =================
@@ -386,20 +385,19 @@ async function deleteCommonSelected() {
   }
 
   showNotify("Selected barcodes deleted");
-  loadMyBarcodes();
-  loadCommonSummary();
+  await loadMyBarcodes();
+  await loadCommonSummary();
 }
 
-// ================= CAMERA =================
+// ================= CAMERA (AUTO SAVE ON SCAN) =================
 async function openScanner() {
   if (!userReady) {
     showNotify("Please wait, loading user...");
     return;
   }
-  const overlay = document.getElementById("scannerOverlay");
-  overlay.classList.remove("hidden");
 
-  scannedCode = null;
+  const overlay = document.getElementById("scannerOverlay");
+  if (overlay) overlay.classList.remove("hidden");
 
   try {
     if (html5QrCode) {
@@ -412,13 +410,22 @@ async function openScanner() {
     await html5QrCode.start(
       { facingMode: "environment" },
       { fps: 10, qrbox: { width: 250, height: 150 } },
-      (decodedText) => {
-        scannedCode = decodedText;
-        scannerReady = true; // ✅ ADD
-        html5QrCode.stop().catch(() => {});
+      async (decodedText) => {
+        // Stop camera immediately
+        try {
+          await html5QrCode.stop().catch(() => {});
+        } catch (e) {}
         html5QrCode = null;
-        // ✅ Just show barcode in input, don't block UI
-        document.getElementById("barcode-input").value = decodedText;
+
+        // Put scanned value into input (optional display)
+        const input = document.getElementById("barcode-input");
+        if (input) input.value = decodedText;
+
+        // ✅ AUTO SAVE
+        await saveBarcode();
+
+        // ✅ CLOSE OVERLAY
+        closeScanner(true);
       }
     );
   } catch (err) {
@@ -428,51 +435,14 @@ async function openScanner() {
   }
 }
 
-function tryAgain() {
-  scannedCode = null;
-  scannerReady = false; // ✅ ADD
-  closeScanner(true);
-  openScanner();
-}
-
-function saveScanned() {
-  if (!userReady) {
-    showNotify("Please wait, loading user...");
-    return;
-  }
-  if (!scannerReady) {
-    showNotify("Scan a barcode first");
-    return;
-  }
-  // ✅ ADDED (guard)
-  if (!userReady) {
-    showNotify("Please wait, loading user...");
-    return;
-  }
-
-  if (!scannedCode) {
-    showNotify("No barcode detected yet");
-    return;
-  }
-
-  document.getElementById("barcode-input").value = scannedCode;
-  saveBarcode();
-  closeScanner();
-}
-
 function closeScanner(force = false) {
   if (html5QrCode) {
     html5QrCode.stop().catch(() => {});
     html5QrCode = null;
   }
 
-  if (force) {
-    scannedCode = null;
-    scannerReady = false; // ✅ ADD
-    }
-
-
-  document.getElementById("scannerOverlay").classList.add("hidden");
+  const overlay = document.getElementById("scannerOverlay");
+  if (overlay) overlay.classList.add("hidden");
 }
 
 // ================= LOGOUT =================
@@ -485,5 +455,3 @@ async function logout() {
 
 // ================= INIT =================
 loadUser();
-
-
