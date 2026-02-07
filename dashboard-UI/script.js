@@ -411,22 +411,19 @@ async function openScanner() {
       { facingMode: "environment" },
       { fps: 10, qrbox: { width: 250, height: 150 } },
       async (decodedText) => {
-        // Stop camera immediately
-        try {
-          await html5QrCode.stop().catch(() => {});
-        } catch (e) {}
-        html5QrCode = null;
+  const input = document.getElementById("barcode-input");
+  if (input) input.value = decodedText;
 
-        // Put scanned value into input (optional display)
-        const input = document.getElementById("barcode-input");
-        if (input) input.value = decodedText;
+  // Save immediately
+  await saveBarcode();
 
-        // ✅ AUTO SAVE
-        await saveBarcode();
+  // ✅ Show confirmation tick
+  showScanSuccess();
 
-        // ✅ CLOSE OVERLAY
-        closeScanner(true);
-      }
+  // 🔁 Keep camera open — prevent duplicate rapid scans
+  await new Promise(r => setTimeout(r, 1200));
+}
+
     );
   } catch (err) {
     console.error("Camera error:", err);
@@ -464,4 +461,5 @@ async function logout() {
 
 // ================= INIT =================
 loadUser();
+
 
