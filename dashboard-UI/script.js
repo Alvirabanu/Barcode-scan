@@ -445,6 +445,15 @@ function closeScanner(force = false) {
   if (overlay) overlay.classList.add("hidden");
 }
 
+function showScanSuccess() {
+  const el = document.getElementById("scanSuccess");
+  if (!el) return;
+
+  el.classList.remove("hidden");
+  setTimeout(() => el.classList.add("hidden"), 900);
+}
+
+
 // ================= LOGOUT =================
 async function logout() {
   await supabaseClient.auth.signOut();
@@ -455,3 +464,4 @@ async function logout() {
 
 // ================= INIT =================
 loadUser();
+
