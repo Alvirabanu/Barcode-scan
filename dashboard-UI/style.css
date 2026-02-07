@@ -450,4 +450,25 @@ th, td {
   display: none !important;
 }
 
+.search-row {
+  display: flex;
+  gap: 12px;
+  margin: 14px 0 10px;
+}
+
+.search-input {
+  flex: 1;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid #d1d5db;
+  font-size: 14px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #14b8a6;
+}
+
+
+
 
