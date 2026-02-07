@@ -153,6 +153,36 @@ async function saveBarcode() {
   await loadCommonSummary();
 }
 
+function beepSuccess() {
+  // Simple beep using Web Audio API (no extra files needed)
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    const ctx = new AudioContext();
+
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    oscillator.type = "sine";
+    oscillator.frequency.value = 880; // beep pitch (Hz)
+
+    gain.gain.value = 0.06; // volume (0 to 1)
+
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+
+    oscillator.start();
+
+    // stop after 120ms
+    setTimeout(() => {
+      oscillator.stop();
+      ctx.close();
+    }, 120);
+  } catch (e) {
+    // If browser blocks audio, silently ignore
+  }
+}
+
+
 // ================= EDIT COUNT (MY BARCODES) =================
 async function editBarcodeCount(barcode, currentQty) {
   const input = prompt(
@@ -477,7 +507,11 @@ async function openScanner() {
         if (input) input.value = decodedText;
         await saveBarcode();
 
+        // beep sound
+        beepSuccess();
+
         // tick
+        
         showScanSuccess();
 
         // close overlay and return to dashboard
@@ -531,4 +565,5 @@ async function logout() {
 
 // ================= INIT =================
 loadUser();
+
 
