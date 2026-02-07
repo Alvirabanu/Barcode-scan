@@ -12,8 +12,11 @@ let html5QrCode = null;
 let userMap = {};
 let userReady = false;
 
+// ✅ Cache for "My Barcodes" (used for search filtering)
+let myBarcodesCache = [];
+
 // ================= ✅ SCAN SUCCESS TICK =================
-// Make sure index.html has:
+// Make sure dashboard-UI/index.html has:
 // <div id="scanSuccess" class="scan-success hidden">✅ Saved</div>
 function showScanSuccess() {
   const el = document.getElementById("scanSuccess");
@@ -77,6 +80,17 @@ function syncSelectAll() {
   if (master) master.checked = all.length && all.length === checked.length;
 }
 
+// ================= TABS =================
+// Your HTML calls: showTab('my', this) and showTab('common', this)
+function showTab(tabName, btnEl) {
+  document.getElementById("my")?.classList.add("hidden");
+  document.getElementById("common")?.classList.add("hidden");
+
+  document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+  document.getElementById(tabName)?.classList.remove("hidden");
+  if (btnEl) btnEl.classList.add("active");
+}
+
 // ================= LOAD USER =================
 async function loadUser() {
   const { data } = await supabaseClient.auth.getUser();
@@ -96,22 +110,10 @@ async function loadUser() {
     title.textContent = `${userMap[currentUserId] || "User"} Dashboard`;
   }
 
-  // Load tables
   await loadMyBarcodes();
   await loadCommonSummary();
 
   userReady = true;
-}
-
-// ================= TABS =================
-// Your HTML calls: showTab('my', this) and showTab('common', this)
-function showTab(tabName, btnEl) {
-  document.getElementById("my")?.classList.add("hidden");
-  document.getElementById("common")?.classList.add("hidden");
-
-  document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
-  document.getElementById(tabName)?.classList.remove("hidden");
-  if (btnEl) btnEl.classList.add("active");
 }
 
 // ================= SAVE BARCODE =================
@@ -153,51 +155,152 @@ async function saveBarcode() {
   await loadCommonSummary();
 }
 
-function beepSuccess() {
-  // Simple beep using Web Audio API (no extra files needed)
+// ================= CAMERA (SCAN → SAVE → ✅ → CLOSE) =================
+async function openScanner() {
+  if (!userReady) {
+    showNotify("Please wait, loading user...");
+    return;
+  }
+
+  document.getElementById("scannerOverlay")?.classList.remove("hidden");
+
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    const ctx = new AudioContext();
+    if (html5QrCode) {
+      await html5QrCode.stop().catch(() => {});
+      html5QrCode = null;
+    }
 
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
+    html5QrCode = new Html5Qrcode("reader");
 
-    oscillator.type = "sine";
-    oscillator.frequency.value = 880; // beep pitch (Hz)
+    await html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 250, height: 150 } },
+      async (decodedText) => {
+        // Stop camera immediately
+        await html5QrCode.stop().catch(() => {});
+        html5QrCode = null;
 
-    gain.gain.value = 0.06; // volume (0 to 1)
+        // Save
+        const input = document.getElementById("barcode-input");
+        if (input) input.value = decodedText;
+        await saveBarcode();
 
-    oscillator.connect(gain);
-    gain.connect(ctx.destination);
+        // Tick
+        showScanSuccess();
 
-    oscillator.start();
-
-    // stop after 120ms
-    setTimeout(() => {
-      oscillator.stop();
-      ctx.close();
-    }, 120);
-  } catch (e) {
-    // If browser blocks audio, silently ignore
+        // Close scanner overlay (back to dashboard)
+        setTimeout(() => closeScanner(), 900);
+      }
+    );
+  } catch (err) {
+    console.error("Camera error:", err);
+    showNotify("Camera permission denied or camera not available");
+    closeScanner();
   }
 }
 
+function closeScanner() {
+  if (html5QrCode) {
+    html5QrCode.stop().catch(() => {});
+    html5QrCode = null;
+  }
+  document.getElementById("scannerOverlay")?.classList.add("hidden");
+}
+
+// ================= MY BARCODES (RENDER + SEARCH) =================
+function renderMyBarcodes(rows) {
+  const tbody = document.getElementById("myBarcodesBody");
+  if (!tbody) return;
+
+  tbody.innerHTML = "";
+
+  (rows || []).forEach(row => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>
+        <input type="checkbox"
+          class="row-check"
+          data-barcode="${row.barcode}"
+          onchange="syncSelectAll()">
+        ${row.barcode}
+      </td>
+      <td>${row.quantity}</td>
+      <td>${new Date(row.created_at).toLocaleDateString()}</td>
+      <td>
+        <span class="delete" title="Edit count"
+          onclick="editBarcodeCount('${row.barcode}', ${row.quantity})">✏️</span>
+        &nbsp;&nbsp;
+        <span class="delete" title="Delete"
+          onclick="deleteBarcode('${row.barcode}')">🗑</span>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  syncSelectAll();
+}
+
+function filterMyBarcodes() {
+  const q = (document.getElementById("mySearch")?.value || "")
+    .trim()
+    .toLowerCase();
+
+  if (!q) {
+    renderMyBarcodes(myBarcodesCache);
+    return;
+  }
+
+  const filtered = myBarcodesCache.filter(r =>
+    String(r.barcode).toLowerCase().includes(q)
+  );
+
+  renderMyBarcodes(filtered);
+}
+
+function clearMySearch() {
+  const input = document.getElementById("mySearch");
+  if (input) input.value = "";
+  renderMyBarcodes(myBarcodesCache);
+}
+
+// ================= LOAD MY BARCODES =================
+async function loadMyBarcodes() {
+  const { data } = await supabaseClient
+    .from("user_scans")
+    .select("*")
+    .eq("user_id", currentUserId)
+    .order("created_at", { ascending: false });
+
+  myBarcodesCache = data || [];
+  renderMyBarcodes(myBarcodesCache);
+
+  // If user is searching, keep filter applied after refresh
+  const q = (document.getElementById("mySearch")?.value || "").trim();
+  if (q) filterMyBarcodes();
+}
 
 // ================= EDIT COUNT (MY BARCODES) =================
 async function editBarcodeCount(barcode, currentQty) {
+  if (!userReady || !currentUserId) {
+    showNotify("Please wait, loading user...");
+    return;
+  }
+
   const input = prompt(
     `Edit count for: ${barcode}\nCurrent: ${currentQty}\nEnter new count:`,
     currentQty
   );
-  if (input === null) return;
+
+  if (input === null) return; // cancelled
 
   const newQty = parseInt(input, 10);
+
   if (Number.isNaN(newQty) || newQty < 0) {
     showNotify("Please enter a valid number (0 or more)");
     return;
   }
 
-  // if 0 => delete
+  // If set to 0, ask to delete
   if (newQty === 0) {
     const ok = confirm("Count is 0. Do you want to delete this barcode?");
     if (!ok) return;
@@ -274,45 +377,6 @@ async function deleteSelected() {
   showNotify("Selected barcodes deleted");
   await loadMyBarcodes();
   await loadCommonSummary();
-}
-
-// ================= LOAD MY BARCODES =================
-async function loadMyBarcodes() {
-  const tbody = document.getElementById("myBarcodesBody");
-  if (!tbody) return;
-
-  tbody.innerHTML = "";
-
-  const { data } = await supabaseClient
-    .from("user_scans")
-    .select("*")
-    .eq("user_id", currentUserId)
-    .order("created_at", { ascending: false });
-
-  (data || []).forEach(row => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>
-        <input type="checkbox"
-          class="row-check"
-          data-barcode="${row.barcode}"
-          onchange="syncSelectAll()">
-        ${row.barcode}
-      </td>
-      <td>${row.quantity}</td>
-      <td>${new Date(row.created_at).toLocaleDateString()}</td>
-      <td>
-        <span class="delete" title="Edit count"
-          onclick="editBarcodeCount('${row.barcode}', ${row.quantity})">✏️</span>
-        &nbsp;&nbsp;
-        <span class="delete" title="Delete"
-          onclick="deleteBarcode('${row.barcode}')">🗑</span>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  syncSelectAll();
 }
 
 // ================= COMMON SUMMARY =================
@@ -405,6 +469,11 @@ async function deleteCommonSelected() {
 
 // ================= DOWNLOAD MY BARCODES EXCEL =================
 async function downloadMyBarcodesExcel() {
+  if (typeof XLSX === "undefined") {
+    showNotify("Excel library not loaded. Add XLSX script in dashboard index.html.");
+    return;
+  }
+
   const { data, error } = await supabaseClient
     .from("user_scans")
     .select("barcode, quantity, created_at")
@@ -432,6 +501,11 @@ async function downloadMyBarcodesExcel() {
 
 // ================= DOWNLOAD COMMON SUMMARY EXCEL =================
 async function downloadCommonSummaryExcel() {
+  if (typeof XLSX === "undefined") {
+    showNotify("Excel library not loaded. Add XLSX script in dashboard index.html.");
+    return;
+  }
+
   const { data, error } = await supabaseClient
     .from("user_scans")
     .select("barcode, quantity, user_id");
@@ -477,60 +551,12 @@ async function downloadCommonSummaryExcel() {
   XLSX.writeFile(workbook, "common-summary.xlsx");
 }
 
-// ================= CAMERA (SCAN → SAVE → ✅ → CLOSE → DASHBOARD) =================
-async function openScanner() {
-  if (!userReady) {
-    showNotify("Please wait, loading user...");
-    return;
-  }
-
-  document.getElementById("scannerOverlay")?.classList.remove("hidden");
-
-  try {
-    if (html5QrCode) {
-      await html5QrCode.stop().catch(() => {});
-      html5QrCode = null;
-    }
-
-    html5QrCode = new Html5Qrcode("reader");
-
-    await html5QrCode.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 250, height: 150 } },
-      async (decodedText) => {
-        // stop camera immediately
-        await html5QrCode.stop().catch(() => {});
-        html5QrCode = null;
-
-        // save
-        const input = document.getElementById("barcode-input");
-        if (input) input.value = decodedText;
-        await saveBarcode();
-
-        // beep sound
-        beepSuccess();
-
-        // tick
-        
-        showScanSuccess();
-
-        // close overlay and return to dashboard
-        setTimeout(() => closeScanner(), 900);
-      }
-    );
-  } catch (err) {
-    console.error("Camera error:", err);
-    showNotify("Camera permission denied or camera not available");
-    closeScanner();
-  }
-}
-
-function closeScanner() {
-  if (html5QrCode) {
-    html5QrCode.stop().catch(() => {});
-    html5QrCode = null;
-  }
-  document.getElementById("scannerOverlay")?.classList.add("hidden");
+// ================= LOGOUT =================
+async function logout() {
+  await supabaseClient.auth.signOut();
+  localStorage.clear();
+  sessionStorage.clear();
+  window.location.href = "../login-UI/signin.html";
 }
 
 // ================= MAKE FUNCTIONS AVAILABLE TO HTML onclick =================
@@ -552,18 +578,10 @@ window.deleteBarcode = deleteBarcode;
 window.deleteCommonBarcode = deleteCommonBarcode;
 window.editBarcodeCount = editBarcodeCount;
 
+window.filterMyBarcodes = filterMyBarcodes;
+window.clearMySearch = clearMySearch;
+
 window.closeNotify = closeNotify;
-
-
-// ================= LOGOUT =================
-async function logout() {
-  await supabaseClient.auth.signOut();
-  localStorage.clear();
-  sessionStorage.clear();
-  window.location.href = "../login-UI/signin.html";
-}
 
 // ================= INIT =================
 loadUser();
-
-
