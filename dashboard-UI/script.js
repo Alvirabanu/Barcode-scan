@@ -499,6 +499,28 @@ function closeScanner() {
   document.getElementById("scannerOverlay")?.classList.add("hidden");
 }
 
+// ================= MAKE FUNCTIONS AVAILABLE TO HTML onclick =================
+window.openScanner = openScanner;
+window.closeScanner = closeScanner;
+window.saveBarcode = saveBarcode;
+window.logout = logout;
+
+window.showTab = showTab;
+
+window.toggleSelectAll = toggleSelectAll;
+window.deleteSelected = deleteSelected;
+window.deleteCommonSelected = deleteCommonSelected;
+
+window.downloadMyBarcodesExcel = downloadMyBarcodesExcel;
+window.downloadCommonSummaryExcel = downloadCommonSummaryExcel;
+
+window.deleteBarcode = deleteBarcode;
+window.deleteCommonBarcode = deleteCommonBarcode;
+window.editBarcodeCount = editBarcodeCount;
+
+window.closeNotify = closeNotify;
+
+
 // ================= LOGOUT =================
 async function logout() {
   await supabaseClient.auth.signOut();
@@ -509,3 +531,4 @@ async function logout() {
 
 // ================= INIT =================
 loadUser();
+
