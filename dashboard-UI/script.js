@@ -36,6 +36,7 @@ function closeNotify() {
 // ================= 👤 PROFILE =================
 async function ensureProfile(user) {
   const username = user.user_metadata?.username || "unknown";
+
   const { data } = await supabaseClient
     .from("profiles")
     .select("id")
@@ -69,6 +70,7 @@ async function loadUser() {
   }
 
   currentUserId = data.user.id;
+
   await ensureProfile(data.user);
   await loadUsernames();
 
@@ -77,6 +79,7 @@ async function loadUser() {
 
   await loadMyBarcodes();
   await loadCommonSummary();
+
   userReady = true;
 }
 
@@ -111,7 +114,7 @@ async function saveBarcode() {
   await loadCommonSummary();
 }
 
-// ================= CAMERA (STOP → SAVE → TICK → RESTART) =================
+// ================= CAMERA (SCAN → SAVE → CLOSE → HOME) =================
 async function openScanner() {
   if (!userReady) {
     showNotify("Please wait, loading user...");
@@ -133,7 +136,7 @@ async function openScanner() {
       { fps: 10, qrbox: { width: 250, height: 150 } },
       async (decodedText) => {
 
-        // 1️⃣ TURN OFF CAMERA
+        // 1️⃣ STOP CAMERA
         await html5QrCode.stop().catch(() => {});
         html5QrCode = null;
 
@@ -144,14 +147,25 @@ async function openScanner() {
         // 3️⃣ SHOW ✅
         showScanSuccess();
 
-        // 4️⃣ RESTART CAMERA AFTER SHORT DELAY
-        setTimeout(() => openScanner(), 900);
+        // 4️⃣ CLOSE SCANNER & RETURN TO HOME
+        setTimeout(() => {
+          closeScanner();
+        }, 900);
       }
     );
   } catch (err) {
     console.error(err);
     showNotify("Camera error or permission denied");
+    closeScanner();
   }
+}
+
+function closeScanner() {
+  if (html5QrCode) {
+    html5QrCode.stop().catch(() => {});
+    html5QrCode = null;
+  }
+  document.getElementById("scannerOverlay").classList.add("hidden");
 }
 
 // ================= TABLES =================
@@ -184,10 +198,9 @@ async function loadCommonSummary() {
 
   const { data } = await supabaseClient
     .from("user_scans")
-    .select("barcode, quantity, user_id");
+    .select("barcode, quantity");
 
   const summary = {};
-
   data?.forEach(row => {
     summary[row.barcode] = (summary[row.barcode] || 0) + row.quantity;
   });
