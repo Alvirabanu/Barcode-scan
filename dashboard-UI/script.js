@@ -74,8 +74,10 @@ async function loadUser() {
   await ensureProfile(data.user);
   await loadUsernames();
 
-  document.getElementById("dashboard-title").textContent =
-    `${userMap[currentUserId] || "User"} Dashboard`;
+  const title = document.getElementById("dashboard-title");
+  if (title) {
+    title.textContent = `${userMap[currentUserId] || "User"} Dashboard`;
+  }
 
   await loadMyBarcodes();
   await loadCommonSummary();
@@ -85,10 +87,10 @@ async function loadUser() {
 
 // ================= SAVE BARCODE =================
 async function saveBarcode() {
-  if (!userReady) return;
+  if (!userReady || !currentUserId) return;
 
   const input = document.getElementById("barcode-input");
-  const barcode = input.value.trim();
+  const barcode = (input?.value || "").trim();
   if (!barcode) return;
 
   const { data: existing } = await supabaseClient
@@ -109,7 +111,8 @@ async function saveBarcode() {
       .insert({ user_id: currentUserId, barcode, quantity: 1 });
   }
 
-  input.value = "";
+  if (input) input.value = "";
+
   await loadMyBarcodes();
   await loadCommonSummary();
 }
@@ -121,7 +124,7 @@ async function openScanner() {
     return;
   }
 
-  document.getElementById("scannerOverlay").classList.remove("hidden");
+  document.getElementById("scannerOverlay")?.classList.remove("hidden");
 
   try {
     if (html5QrCode) {
@@ -135,19 +138,19 @@ async function openScanner() {
       { facingMode: "environment" },
       { fps: 10, qrbox: { width: 250, height: 150 } },
       async (decodedText) => {
-
-        // 1️⃣ STOP CAMERA
+        // 1) STOP CAMERA
         await html5QrCode.stop().catch(() => {});
         html5QrCode = null;
 
-        // 2️⃣ SAVE BARCODE
-        document.getElementById("barcode-input").value = decodedText;
+        // 2) SAVE BARCODE
+        const input = document.getElementById("barcode-input");
+        if (input) input.value = decodedText;
         await saveBarcode();
 
-        // 3️⃣ SHOW ✅
+        // 3) SHOW ✅
         showScanSuccess();
 
-        // 4️⃣ CLOSE SCANNER & RETURN TO HOME
+        // 4) CLOSE SCANNER OVERLAY (back to dashboard)
         setTimeout(() => {
           closeScanner();
         }, 900);
@@ -165,12 +168,14 @@ function closeScanner() {
     html5QrCode.stop().catch(() => {});
     html5QrCode = null;
   }
-  document.getElementById("scannerOverlay").classList.add("hidden");
+  document.getElementById("scannerOverlay")?.classList.add("hidden");
 }
 
 // ================= TABLES =================
 async function loadMyBarcodes() {
   const tbody = document.getElementById("myBarcodesBody");
+  if (!tbody) return;
+
   tbody.innerHTML = "";
 
   const { data } = await supabaseClient
@@ -179,23 +184,34 @@ async function loadMyBarcodes() {
     .eq("user_id", currentUserId)
     .order("created_at", { ascending: false });
 
-  data?.forEach(row => {
-    tbody.innerHTML += `
-      <tr>
-        <td>${row.barcode}</td>
-        <td>${row.quantity}</td>
-        <td>${new Date(row.created_at).toLocaleDateString()}</td>
-        <td>
-  <span class="delete" onclick="editBarcodeCount('${row.barcode}', ${row.quantity})">✏️</span>
-  &nbsp;&nbsp;
-  <span class="delete" onclick="deleteBarcode('${row.barcode}')">🗑</span>
-</td>
-      </tr>`;
+  (data || []).forEach(row => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${row.barcode}</td>
+      <td>${row.quantity}</td>
+      <td>${new Date(row.created_at).toLocaleDateString()}</td>
+      <td>
+        <span
+          class="delete"
+          title="Edit count"
+          onclick="editBarcodeCount('${row.barcode}', ${row.quantity})"
+        >✏️</span>
+        &nbsp;&nbsp;
+        <span
+          class="delete"
+          title="Delete barcode"
+          onclick="deleteBarcode('${row.barcode}')"
+        >🗑</span>
+      </td>
+    `;
+    tbody.appendChild(tr);
   });
 }
 
 async function loadCommonSummary() {
   const tbody = document.getElementById("commonSummaryBody");
+  if (!tbody) return;
+
   tbody.innerHTML = "";
 
   const { data } = await supabaseClient
@@ -203,26 +219,88 @@ async function loadCommonSummary() {
     .select("barcode, quantity");
 
   const summary = {};
-  data?.forEach(row => {
+  (data || []).forEach(row => {
     summary[row.barcode] = (summary[row.barcode] || 0) + row.quantity;
   });
 
   Object.entries(summary).forEach(([barcode, total]) => {
-    tbody.innerHTML += `
-      <tr>
-        <td>${barcode}</td>
-        <td>${total}</td>
-      </tr>`;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${barcode}</td>
+      <td>${total}</td>
+    `;
+    tbody.appendChild(tr);
   });
 }
 
-// ================= DELETE =================
+// ================= EDIT COUNT (MY BARCODES) =================
+async function editBarcodeCount(barcode, currentQty) {
+  if (!userReady || !currentUserId) {
+    showNotify("Please wait, loading user...");
+    return;
+  }
+
+  const input = prompt(
+    `Edit count for: ${barcode}\nCurrent: ${currentQty}\nEnter new count:`,
+    currentQty
+  );
+
+  if (input === null) return; // cancelled
+
+  const newQty = parseInt(input, 10);
+
+  if (Number.isNaN(newQty) || newQty < 0) {
+    showNotify("Please enter a valid number (0 or more)");
+    return;
+  }
+
+  // If set to 0, ask to delete
+  if (newQty === 0) {
+    const ok = confirm("Count is 0. Do you want to delete this barcode?");
+    if (!ok) return;
+    await deleteBarcode(barcode);
+    return;
+  }
+
+  const { data: row, error: fetchErr } = await supabaseClient
+    .from("user_scans")
+    .select("id")
+    .eq("user_id", currentUserId)
+    .eq("barcode", barcode)
+    .single();
+
+  if (fetchErr || !row) {
+    showNotify("Could not find this barcode");
+    return;
+  }
+
+  const { error } = await supabaseClient
+    .from("user_scans")
+    .update({ quantity: newQty })
+    .eq("id", row.id);
+
+  if (error) {
+    showNotify("Update failed");
+    return;
+  }
+
+  showNotify("✅ Count updated");
+  await loadMyBarcodes();
+  await loadCommonSummary();
+}
+
+// ================= DELETE (MY) =================
 async function deleteBarcode(barcode) {
-  await supabaseClient
+  const { error } = await supabaseClient
     .from("user_scans")
     .delete()
     .eq("barcode", barcode)
     .eq("user_id", currentUserId);
+
+  if (error) {
+    showNotify("Delete failed");
+    return;
+  }
 
   await loadMyBarcodes();
   await loadCommonSummary();
@@ -232,9 +310,9 @@ async function deleteBarcode(barcode) {
 async function logout() {
   await supabaseClient.auth.signOut();
   localStorage.clear();
+  sessionStorage.clear();
   window.location.href = "../login-UI/signin.html";
 }
 
 // ================= INIT =================
 loadUser();
-
