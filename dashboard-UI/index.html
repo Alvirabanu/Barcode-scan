@@ -40,6 +40,13 @@
         📷 Open Camera Scanner
     </button>
 
+    <button class="scan-btn upload-scan-btn">
+        📂 Upload Stock Excel
+        <input type="file" id="stockUpload" accept=".xlsx,.xls">
+    </button>
+
+
+
     <div class="divider">OR ENTER MANUALLY</div>
 
     <div class="manual-row">
@@ -52,75 +59,105 @@
   <div class="tabs">
     <button class="tab active" onclick="showTab('my', this)">My Barcodes</button>
     <button class="tab" onclick="showTab('common', this)">Common Summary</button>
+    <button class="tab" onclick="showTab('audit', this)">Audit Compare</button>
   </div>
 
-  <!-- ================= MY BARCODES ================= -->
-  <div id="my" class="card tab-content">
+<!-- ================= MY BARCODES ================= -->
+<div id="my" class="card tab-content">
 
-    <div class="card-header">
-      <h3>My Barcodes</h3>
-      <button class="excel-btn" onclick="downloadMyBarcodesExcel()">
-        📊 Download Excel
-      </button>
+  <div class="card-header">
+    <h3>My Barcodes</h3>
+    <button class="excel-btn" onclick="downloadMyBarcodesExcel()">
+      📊 Download Excel
+    </button>
 
-    </div>
+  </div>
 
-    <div class="search-row">
-  <input id="mySearch" class="search-input" type="text"
-    placeholder="Search barcode..." oninput="filterMyBarcodes()" />
-  <button class="outline-btn" onclick="clearMySearch()">Clear</button>
+  <div class="search-row">
+    <input id="searchInput" class="search-input" placeholder="Search barcode..." onkeyup="searchBarcode()">
+    <button class="clear-btn" onclick="clearSearch()">Clear</button>
+  </div>
+
+  <table>
+    <thead>
+        <tr>
+            <th>
+                <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)">
+                Barcode
+            </th>
+            <th>Stored</th>
+            <th>Scanned</th>
+            <th>Status</th>
+            <th>Last Scanned</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+
+    <tbody id="myBarcodesBody"></tbody>
+  </table>
+
 </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th>
-            <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)">
-            Barcode
-          </th>
-          <th>Count</th>
-          <th>Last Scanned</th>
-          <th>
-            <button class="delete-btn" onclick="deleteSelected()">
-              🗑 Delete Selected
-            </button>
-          </th>
-        </tr>
-      </thead>
-      <tbody id="myBarcodesBody"></tbody>
-    </table>
+<!-- ================= COMMON SUMMARY ================= -->
+<div id="common" class="card tab-content hidden">
 
+  <div class="card-header">
+    <h3>Common Summary</h3>
+    <button class="excel-btn" onclick="downloadCommonSummaryExcel()">
+      📊 Download Excel
+    </button>
   </div>
 
-  <!-- ================= COMMON SUMMARY ================= -->
-  <div id="common" class="card tab-content hidden">
-
-    <div class="card-header">
-      <h3>Common Summary</h3>
-      <button class="excel-btn" onclick="downloadCommonSummaryExcel()">
-        📊 Download Excel
-      </button>
-    </div>
-
-    <table>
-      <thead>
-        <tr>
-          <th>
-            <input type="checkbox"
-              onclick="document
-                .querySelectorAll('.common-check')
-                .forEach(cb => cb.checked = this.checked)">
-            Barcode
-          </th>
-          <th>User Counts</th>
-          <th>Total</th>
-          
-        </tr>
-      </thead>
-      <tbody id="commonSummaryBody"></tbody>
-    </table>
-
+  <div class="search-row">
+    <input id="commonSearchInput" class="search-input" placeholder="Search barcode in summary..." onkeyup="searchCommonSummary()">
+    <button class="clear-btn" onclick="clearCommonSearch()">Clear</button>
   </div>
+
+  <table>
+    <thead>
+        <tr>
+            <th>
+                <input type="checkbox" id="selectAllCommon" onclick="toggleCommonSelectAll(this)">
+                Barcode
+            </th>
+            <th>User Counts</th>
+            <th>Total</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody id="commonSummaryBody"></tbody>
+  </table>
+
+</div>
+
+<!-- ================= AUDIT COMPARE ================= -->
+<div id="audit" class="card tab-content hidden">
+
+  <div class="card-header">
+    <h3>Audit Compare</h3>
+    <button class="excel-btn" onclick="downloadAuditExcel()">
+      📊 Download Report
+    </button>
+  </div>
+
+  <div class="search-row">
+    <input id="auditSearchInput" class="search-input" placeholder="Search barcode in audit..." onkeyup="searchAudit()">
+    <button class="clear-btn" onclick="clearAuditSearch()">Clear</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Barcode</th>
+        <th>Stored</th>
+        <th>Scanned</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="auditBody"></tbody>
+  </table>
+
+</div>
 
 </main>
 
@@ -137,13 +174,42 @@
     <p class="scanner-hint">
       Hold steady and center the barcode in the box
     </p>
-
-    </div>
+  </div>
 </div>
 
-  <!-- ✅ SCAN CONFIRMATION -->
-<div id="scanSuccess" class="scan-success hidden">✅ Saved</div>
+<!-- ================= EDIT MODAL ================= -->
+<div id="editModal" class="edit-modal hidden">
+  <div class="edit-box">
 
+    <button class="edit-close" onclick="closeEditModal()">✕</button>
+
+    <h3>Edit Barcode</h3>
+
+    <label>Barcode</label>
+    <input id="editBarcodeInput" type="text">
+
+    <label>Quantity</label>
+    <input id="editQtyInput" type="number" min="0">
+
+    <div class="edit-actions">
+      <button class="save-btn" onclick="saveEdit()">Save</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ===== DELETE CONFIRM MODAL ===== -->
+<div id="deleteConfirmOverlay" class="notify-overlay hidden">
+  <div class="notify-box">
+    <p id="deleteConfirmText">Delete selected barcodes?</p>
+
+    <div style="margin-top:18px; display:flex; gap:12px; justify-content:center;">
+      <button class="notify-btn" onclick="confirmDelete()">Yes Delete</button>
+      <button class="clear-btn" onclick="closeDeleteConfirm()">Cancel</button>
+    </div>
+
+  </div>
+</div>
 
 <!-- ================= CUSTOM NOTIFICATION ================= -->
 <div id="notifyOverlay" class="notify-overlay hidden">
@@ -154,23 +220,24 @@
 </div>
 
 <!-- ================= SCRIPTS ================= -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/html5-qrcode"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
-
-<!-- ✅ FIXED SCRIPT PATH -->
 <script src="./script.js"></script>
+
+<!-- FLOATING DELETE BUTTON -->
+<div id="floatingDelete" class="floating-delete hidden">
+  <button type="button" id="floatingDeleteBtn">
+    🗑 Delete Selected (<span id="deleteCount">0</span>)
+  </button>
+</div>
+
+<div id="floatingCommonDelete" class="floating-delete hidden">
+  <button type="button" onclick="deleteSelectedCommonBarcodes()">
+    🗑 Delete Selected (<span id="commonDeleteCount">0</span>)
+  </button>
+</div>
 
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-

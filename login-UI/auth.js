@@ -8,7 +8,7 @@ const supabaseClient = window.supabase.createClient(
 );
 
 // 🔴 CHANGE THIS to your GitHub Pages base URL
-const BASE_URL = "https://alvirabanu.github.io/Barcode-scan";
+const BASE_URL = "https://https://alvirabanu.github.io/Barcode-scan";
 
 // ================= SIGN UP =================
 async function signUp() {
@@ -99,5 +99,3 @@ async function forgotPassword() {
     alert("Password reset email sent. Check your inbox.");
   }
 }
-
-
