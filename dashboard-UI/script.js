@@ -418,13 +418,7 @@ async function loadCommonSummary() {
       <td>${usersHtml}</td>
       <td>${info.total}</td>
       <!-- DELETE DISABLED -->
-  ${
-    ""
-    /*
-    <td>
-      <span class="delete" onclick="deleteCommonBarcode('${barcode}')">🗑</span>
-    </td>
-    */
+  
     `;
     tbody.appendChild(tr);
   });
@@ -590,5 +584,6 @@ window.closeNotify = closeNotify;
 
 // ================= INIT =================
 loadUser();
+
 
 
