@@ -274,7 +274,7 @@ async function loadMyBarcodes(){
   }
   const result = await query.range(from, to);
   const products = result.data || [];
-  totalCommon = result.count || 0;
+  totalMy = result.count || 0;
 
 
   const { data: myScans } = await supabaseClient
@@ -836,136 +836,113 @@ async function openEditProduct(barcode, name){
 
 
 // ================= DOWNLOAD MY BARCODES EXCEL =================
-async function downloadMyBarcodesExcel() {
+async function downloadMyBarcodesExcel(){
 
-  if (!currentUserId) {
+  if(!currentUserId){
     showNotify("User not ready");
     return;
   }
 
-  // 1️⃣ Book Count (uploaded excel stock)
-  const { data: expected } = await supabaseClient
-    .from("expected_stock")
-    .select("barcode, quantity");
+  // 1️⃣ products = book count
+  const { data: products } = await supabaseClient
+    .from("products")
+    .select("*");
 
-  // 2️⃣ My Physical Count (my scans)
-  const { data: scanned } = await supabaseClient
-    .from("user_scans")
-    .select("barcode, quantity, created_at")
+  // 2️⃣ scans = MY physical count
+  const { data: scans } = await supabaseClient
+    .from("scans")
+    .select("barcode, qty, created_at")
     .eq("user_id", currentUserId);
 
-  if ((!expected || expected.length === 0) && (!scanned || scanned.length === 0)) {
-    showNotify("No data to export");
-    return;
-  }
-
-  const bookMap = {};
+  // build my physical map
   const physicalMap = {};
   const lastScanMap = {};
 
-  // Book count
-  expected?.forEach(row => {
-    bookMap[row.barcode] = Number(row.quantity);
+  scans.forEach(s=>{
+    physicalMap[s.barcode] = (physicalMap[s.barcode] || 0) + s.qty;
+    lastScanMap[s.barcode] = s.created_at;
   });
-
-  // Physical count
-  scanned?.forEach(row => {
-    physicalMap[row.barcode] = Number(row.quantity);
-    lastScanMap[row.barcode] = row.created_at;
-  });
-
-  // combine all barcodes
-  const allCodes = new Set([
-    ...Object.keys(bookMap),
-    ...Object.keys(physicalMap)
-  ]);
 
   const rows = [];
 
-  allCodes.forEach(code => {
+  products.forEach(p=>{
 
-    const bookCount = bookMap[code] || 0;
-    const physicalCount = physicalMap[code] || 0;
+    const book = p.book_count || 0;
+    const physical = physicalMap[p.barcode] || 0;
 
-    let status = "";
-    if (bookCount === physicalCount) status = "Match";
-    else if (physicalCount < bookCount) status = `Short ${bookCount - physicalCount}`;
-    else status = `Excess ${physicalCount - bookCount}`;
-
-    const lastScan = lastScanMap[code]
-      ? new Date(lastScanMap[code]).toLocaleString()
-      : "-";
+    let status="";
+    if(book === physical) status="Match";
+    else if(physical < book) status=`Short ${book-physical}`;
+    else status=`Excess ${physical-book}`;
 
     rows.push({
-      Barcode: code,
-      "Book Count": bookCount,
-      "Physical Count": physicalCount,
+      Barcode: p.barcode,
+      "Item Name": p.item_name || "-",
+      "Book Count": book,
+      "Physical Count": physical,
       Status: status,
-      "Last Scanned": lastScan
+      "Last Scanned": lastScanMap[p.barcode]
+        ? new Date(lastScanMap[p.barcode]).toLocaleString()
+        : "-"
     });
+
   });
 
-  // create excel
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "My Barcodes");
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "My Barcodes");
 
-  XLSX.writeFile(workbook, "my-barcodes-dashboard.xlsx");
+  XLSX.writeFile(wb, "My-Barcodes.xlsx");
 }
 
-// ================= DOWNLOAD COMMON SUMMARY EXCEL =================
-async function downloadCommonSummaryExcel() {
-  const { data, error } = await supabaseClient
-    .from("user_scans")
-    .select("barcode, quantity, user_id");
 
-  if (error || !data || !data.length) {
-    showNotify("No data to export");
-    return;
-  }
+// ================= DOWNLOAD COMMON SUMMARY EXCEL =================
+async function downloadCommonSummaryExcel(){
+
+  const { data: scans } = await supabaseClient
+    .from("scans")
+    .select("barcode, qty, user_id");
+
+  const { data: profiles } = await supabaseClient
+    .from("profiles")
+    .select("id, username");
+
+  const nameMap = {};
+  profiles.forEach(p=> nameMap[p.id] = p.username);
 
   const summary = {};
 
-  data.forEach(row => {
-    if (!summary[row.barcode]) {
-      summary[row.barcode] = {
-        users: {},
-        total: 0
-      };
+  scans.forEach(s=>{
+    if(!summary[s.barcode]){
+      summary[s.barcode] = { users:{}, total:0 };
     }
 
-    const username =
-      row.user_id === currentUserId
-        ? "you"
-        : userMap[row.user_id] || "unknown";
+    const username = nameMap[s.user_id] || "unknown";
 
-    summary[row.barcode].users[username] =
-      (summary[row.barcode].users[username] || 0) + row.quantity;
+    summary[s.barcode].users[username] =
+      (summary[s.barcode].users[username] || 0) + s.qty;
 
-    summary[row.barcode].total += row.quantity;
+    summary[s.barcode].total += s.qty;
   });
 
-  const rows = Object.entries(summary).map(([barcode, info]) => {
-    const userCounts = Object.entries(info.users)
-      .map(([name, count]) => `${name}: ${count}`)
-      .join(", ");
+  const rows = [];
 
-    return {
+  Object.entries(summary).forEach(([barcode,info])=>{
+    rows.push({
       Barcode: barcode,
-      "User Counts": userCounts,
+      "User Counts": Object.entries(info.users)
+        .map(([u,c])=>`${u}: ${c}`).join(", "),
       Total: info.total
-    };
+    });
   });
 
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Common Summary");
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Common Summary");
 
-  // ✅ Required for mobile browsers
-  await new Promise(r => setTimeout(r, 0));
-
-  XLSX.writeFile(workbook, "common-summary.xlsx");
+  XLSX.writeFile(wb, "Common-Summary.xlsx");
 }
+
 
 // ================= CAMERA =================
 async function openScanner() {
@@ -1116,7 +1093,7 @@ async function loadAuditTable(){
 
 const result = await query.range(from, to);
 const products = result.data || [];
-totalCommon = result.count || 0;
+totalAudit = result.count || 0;
 
 
 
