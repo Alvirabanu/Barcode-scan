@@ -65,13 +65,20 @@
 <!-- ================= MY BARCODES ================= -->
 <div id="my" class="card tab-content">
 
+  <div id="paginationBox" class="pagination"></div>
+
   <div class="card-header">
     <h3>My Barcodes</h3>
-    <button class="excel-btn" onclick="downloadMyBarcodesExcel()">
-      📊 Download Excel
-    </button>
-
+    
+    <div class="header-actions">
+      <div id="paginationMy" class="pagination"></div>
+      
+      <button class="excel-btn" onclick="downloadMyBarcodesExcel()">
+        📊 Download Excel
+      </button>
+    </div>
   </div>
+
 
   <div class="search-row">
     <input id="searchInput" class="search-input" placeholder="Search barcode..." onkeyup="searchBarcode()">
@@ -81,15 +88,15 @@
   <table>
     <thead>
         <tr>
-            <th>
-                <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)">
-                Barcode
-            </th>
-            <th>Book Count</th>
-            <th>Physical Count</th>
-            <th>Status</th>
-            <th>Last Scanned</th>
-            <th>Action</th>
+          <th>
+            <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)">
+            Barcode
+          </th>
+          <th>Item Name</th>
+          <th>Book Count</th>
+          <th>Physical Count</th>
+          <th>Status</th>
+          <th>Action</th>
         </tr>
     </thead>
 
@@ -101,11 +108,22 @@
 <!-- ================= COMMON SUMMARY ================= -->
 <div id="common" class="card tab-content hidden">
 
+  <div id="floatingCommonDelete" class="floating-delete hidden">
+    <button class="floating-delete-btn" onclick="deleteSelectedCommon()">
+      🗑 Delete Selected (<span id="commonDeleteCount">0</span>)
+    </button>
+  </div>
+
+
   <div class="card-header">
     <h3>Common Summary</h3>
+
+    <div class="header-actions">
+      <div id="paginationCommon" class="pagination"></div>
     <button class="excel-btn" onclick="downloadCommonSummaryExcel()">
       📊 Download Excel
     </button>
+    </div>
   </div>
 
   <div class="search-row">
@@ -115,17 +133,22 @@
 
   <table>
     <thead>
-        <tr>
-            <th>
-                <input type="checkbox" id="selectAllCommon" onclick="toggleCommonSelectAll(this)">
-                Barcode
-            </th>
-            <th>User Counts</th>
-            <th>Total</th>
-            <th>Action</th>
-        </tr>
+      <tr>
+        <th>
+      <input type="checkbox" id="selectAllCommon" onclick="toggleCommonSelectAll(this)">
+      Barcode
+    </th>
+        <th>Item Name</th>
+        <th>Book Count</th>
+        <th>Physical Count</th>
+        <th>User Counts</th>
+        <th>Total</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
     </thead>
     <tbody id="commonSummaryBody"></tbody>
+
   </table>
 
 </div>
@@ -135,9 +158,14 @@
 
   <div class="card-header">
     <h3>Audit Compare</h3>
+
+    <div class="header-actions">
+      <div id="paginationAudit" class="pagination"></div>
+    
     <button class="excel-btn" onclick="downloadAuditExcel()">
       📊 Download Report
     </button>
+    </div>
   </div>
 
   <div class="search-row">
@@ -149,11 +177,13 @@
     <thead>
       <tr>
         <th>Barcode</th>
+        <th>Item Name</th>
         <th>Book Count</th>
         <th>Physical Count</th>
         <th>Status</th>
       </tr>
     </thead>
+
     <tbody id="auditBody"></tbody>
   </table>
 
@@ -188,8 +218,12 @@
     <label>Barcode</label>
     <input id="editBarcodeInput" type="text">
 
-    <label>Quantity</label>
+    <label>Physical Count</label>
     <input id="editQtyInput" type="number" min="0">
+
+    <label>Item Name</label>
+    <input id="editNameInput" type="text">
+
 
     <div class="edit-actions">
       <button class="save-btn" onclick="saveEdit()">Save</button>
@@ -241,5 +275,3 @@
 
 </body>
 </html>
-
-
