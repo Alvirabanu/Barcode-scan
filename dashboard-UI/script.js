@@ -7,6 +7,32 @@ const supabaseClient = window.supabase.createClient(
   SUPABASE_ANON_KEY
 );
 
+// 🔥 GET ALL ROWS FROM ANY TABLE (SOLVES 3000+ DATA ISSUE)
+async function fetchAll(tableName, columns="*"){
+
+  let allData = [];
+  let from = 0;
+  const size = 1000;
+
+  while(true){
+
+    const { data, error } = await supabaseClient
+      .from(tableName)
+      .select(columns)
+      .range(from, from + size - 1);
+
+    if(error) break;
+
+    allData = allData.concat(data);
+
+    if(!data || data.length < size) break;
+
+    from += size;
+  }
+
+  return allData;
+}
+
 let currentUserId = null;
 // pagination states
 let myPage = 1;
@@ -132,10 +158,15 @@ function startRealtime(){
       { event: '*', schema: 'public', table: 'products' },
       payload => {
         console.log("Products changed", payload);
+        payload => {
+          if(!document.getElementById("my").classList.contains("hidden"))
+            loadMyBarcodes();
+          if(!document.getElementById("common").classList.contains("hidden"))
+            loadCommonSummary();
+          if(!document.getElementById("audit").classList.contains("hidden"))
+            loadAuditTable();
+          }
 
-        loadMyBarcodes();
-        loadCommonSummary();
-        loadAuditTable();
       }
     )
     .subscribe();
@@ -843,22 +874,22 @@ async function downloadMyBarcodesExcel(){
     return;
   }
 
-  // 1️⃣ products = book count
-  const { data: products } = await supabaseClient
-    .from("products")
-    .select("*");
+  // GET ALL PRODUCTS (no 1000 limit)
+  const products = await fetchAll("products");
 
-  // 2️⃣ scans = MY physical count
-  const { data: scans } = await supabaseClient
+  // GET ALL MY SCANS
+  const scans = await supabaseClient
     .from("scans")
     .select("barcode, qty, created_at")
     .eq("user_id", currentUserId);
 
-  // build my physical map
+  const scanRows = scans.data || [];
+
+  // build physical map
   const physicalMap = {};
   const lastScanMap = {};
 
-  scans.forEach(s=>{
+  scanRows.forEach(s=>{
     physicalMap[s.barcode] = (physicalMap[s.barcode] || 0) + s.qty;
     lastScanMap[s.barcode] = s.created_at;
   });
@@ -899,41 +930,64 @@ async function downloadMyBarcodesExcel(){
 // ================= DOWNLOAD COMMON SUMMARY EXCEL =================
 async function downloadCommonSummaryExcel(){
 
-  const { data: scans } = await supabaseClient
-    .from("scans")
-    .select("barcode, qty, user_id");
+  // get ALL products
+  const products = await fetchAll("products");
 
-  const { data: profiles } = await supabaseClient
-    .from("profiles")
-    .select("id, username");
+  // get ALL scans
+  const scans = await fetchAll("scans");
+
+  // get usernames
+  const profiles = await fetchAll("profiles");
 
   const nameMap = {};
-  profiles.forEach(p=> nameMap[p.id] = p.username);
+  profiles.forEach(p => nameMap[p.id] = p.username);
 
-  const summary = {};
+  // build maps
+  const physicalMap = {};
+  const userMap = {};
 
   scans.forEach(s=>{
-    if(!summary[s.barcode]){
-      summary[s.barcode] = { users:{}, total:0 };
-    }
 
-    const username = nameMap[s.user_id] || "unknown";
+    // total physical
+    physicalMap[s.barcode] = (physicalMap[s.barcode] || 0) + s.qty;
 
-    summary[s.barcode].users[username] =
-      (summary[s.barcode].users[username] || 0) + s.qty;
+    // per user
+    if(!userMap[s.barcode]) userMap[s.barcode] = {};
 
-    summary[s.barcode].total += s.qty;
+    userMap[s.barcode][s.user_id] =
+      (userMap[s.barcode][s.user_id] || 0) + s.qty;
   });
 
   const rows = [];
 
-  Object.entries(summary).forEach(([barcode,info])=>{
+  products.forEach(p=>{
+
+    const book = p.book_count || 0;
+    const physical = physicalMap[p.barcode] || 0;
+
+    let status="";
+    if(book === physical) status="Match";
+    else if(physical < book) status=`Short ${book-physical}`;
+    else status=`Excess ${physical-book}`;
+
+    // user counts text (SAME AS DASHBOARD)
+    let userCounts = "-";
+
+    if(userMap[p.barcode]){
+      userCounts = Object.entries(userMap[p.barcode])
+        .map(([uid,count]) => `${nameMap[uid] || "unknown"}: ${count}`)
+        .join(", ");
+    }
+
     rows.push({
-      Barcode: barcode,
-      "User Counts": Object.entries(info.users)
-        .map(([u,c])=>`${u}: ${c}`).join(", "),
-      Total: info.total
+      Barcode: p.barcode,
+      "Item Name": p.item_name || "-",
+      "Book Count": book,
+      "Physical Count": physical,
+      "User Counts": userCounts,
+      Status: status
     });
+
   });
 
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -1197,13 +1251,9 @@ function prevAuditPage(){
 // ================= DOWNLOAD AUDIT REPORT EXCEL =================
 async function downloadAuditExcel(){
 
-  const { data: products } = await supabaseClient
-    .from("products")
-    .select("*");
+  const products = await fetchAll("products");
+  const scans = await fetchAll("scans");
 
-  const { data: scans } = await supabaseClient
-    .from("scans")
-    .select("barcode, qty");
 
   const physicalMap = {};
   scans.forEach(s=>{
