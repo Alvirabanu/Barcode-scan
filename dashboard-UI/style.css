@@ -684,3 +684,75 @@ td .delete {
   background: #dc2626;
   transform: translateY(-2px);
 }
+
+.card-header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+
+.header-actions{
+  display:flex;
+  align-items:center;
+  gap:14px;
+}
+
+/* pagination right side */
+.pagination{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.pagination button{
+  background:#1fa6c9;
+  color:white;
+  border:none;
+  padding:5px 10px;
+  border-radius:8px;
+  cursor:pointer;
+  font-weight:600;
+  font-size:13px;
+}
+
+.pagination span{
+  background:#eef3f6;
+  padding:5px 12px;
+  border-radius:8px;
+  font-weight:600;
+}
+
+/* pagination container */
+#paginationMy,
+#paginationCommon,
+#paginationAudit{
+    display:flex;
+    justify-content:flex-end;
+    align-items:center;
+    gap:10px;
+    margin-bottom:10px;
+}
+
+/* buttons */
+.page-btn{
+    background:#1fa4c9;
+    color:white;
+    border:none;
+    padding:6px 14px;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:600;
+}
+
+.page-btn:disabled{
+    background:#cfd8dc;
+    cursor:not-allowed;
+}
+
+/* text */
+.page-info{
+    font-weight:600;
+    background:#e8f3f7;
+    padding:6px 14px;
+    border-radius:10px;
+}
