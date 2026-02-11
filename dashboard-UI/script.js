@@ -8,6 +8,18 @@ const supabaseClient = window.supabase.createClient(
 );
 
 let currentUserId = null;
+// pagination states
+let myPage = 1;
+let commonPage = 1;
+let auditPage = 1;
+const PAGE_SIZE = 1000;
+let mySearch = "";
+let commonSearch = "";
+let auditSearch = "";
+let totalMy = 0;
+let totalCommon = 0;
+let totalAudit = 0;
+let totalProducts = 0;
 let html5QrCode = null;
 let scannedCode = null;
 let userMap = {};
@@ -65,20 +77,12 @@ async function loadUsernames() {
 
 // ================= SELECT ALL (MY BARCODES) =================
 function toggleSelectAll(master){
-
-  const tbody = document.getElementById("myBarcodesBody");
-  const checkboxes = tbody.querySelectorAll(".row-check");
-
-  checkboxes.forEach(cb=>{
-    cb.checked = master.checked;
-  });
-
-  syncSelectAll();
+  const checkboxes = document.querySelectorAll("#myBarcodesBody .row-check");
+  checkboxes.forEach(cb=>cb.checked = master.checked);
   updateDeleteUI();
 }
 
-
-
+// PAGES //
 function syncSelectAll(){
 
   const all = document.querySelectorAll(".row-check");
@@ -89,7 +93,6 @@ function syncSelectAll(){
 
   master.checked = all.length > 0 && all.length === checked.length;
 }
-
 
 // ================= LOAD USER =================
 async function loadUser() {
@@ -112,8 +115,46 @@ async function loadUser() {
   loadMyBarcodes();
   loadCommonSummary();
   loadAuditTable();
+  startRealtime();
 
   userReady = true; // ✅ ADDED
+}
+
+// ================= REALTIME LIVE UPDATES =================
+
+function startRealtime(){
+
+  // LISTEN PRODUCTS (book count, item name, delete, upload)
+  supabaseClient
+    .channel('products-live')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'products' },
+      payload => {
+        console.log("Products changed", payload);
+
+        loadMyBarcodes();
+        loadCommonSummary();
+        loadAuditTable();
+      }
+    )
+    .subscribe();
+
+  // LISTEN SCANS (physical count)
+  supabaseClient
+    .channel('scans-live')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'scans' },
+      payload => {
+        console.log("Scans changed", payload);
+
+        loadMyBarcodes();
+        loadCommonSummary();
+        loadAuditTable();
+      }
+    )
+    .subscribe();
 }
 
 // ================= TABS =================
@@ -137,111 +178,42 @@ function showTab(tabName) {
 // ================= SAVE BARCODE (FIXED LIVE UPDATE) =================
 async function saveBarcode() {
 
-  if (!userReady || !currentUserId) {
-    showNotify("Please wait, loading user...");
+  const barcode = document.getElementById("barcode-input").value.trim();
+  if(!barcode) return;
+
+  // record scan
+  const { error } = await supabaseClient.from("scans").insert({
+    user_id: currentUserId,
+    barcode: barcode,
+    qty: 1
+  });
+  
+  if(error){
+    showNotify("Save failed ❌");
     return;
   }
 
-  const input = document.getElementById("barcode-input");
-  const barcode = input.value.trim();
 
-  if (!barcode) {
-    showNotify("Please enter a barcode");
-    return;
-  }
-
-  // Check if exists
-  const { data: existing, error: fetchError } = await supabaseClient
-    .from("user_scans")
-    .select("*")
-    .eq("user_id", currentUserId)
+  // if barcode not in upload → auto create product
+  const { data } = await supabaseClient
+    .from("products")
+    .select("barcode")
     .eq("barcode", barcode)
-    .maybeSingle();   // IMPORTANT CHANGE
+    .maybeSingle();
 
-  if (fetchError) {
-    showNotify("Database error");
-    return;
+  if(!data){
+    await supabaseClient.from("products").insert({
+      barcode: barcode,
+      item_name: "",
+      book_count: 0
+    });
   }
 
-  // Update or insert
-  if (existing) {
-    await supabaseClient
-      .from("user_scans")
-      .update({ quantity: existing.quantity + 1 })
-      .eq("id", existing.id);
-  } else {
-    await supabaseClient
-      .from("user_scans")
-      .insert({
-        user_id: currentUserId,
-        barcode,
-        quantity: 1
-      });
-  }
+  document.getElementById("barcode-input").value = "";
 
-  input.value = "";
-
-  // ⭐ WAIT FOR DATABASE COMMIT (THIS IS THE MAGIC)
-  await new Promise(resolve => setTimeout(resolve, 350));
-
-  // Reload everything
-  await loadMyBarcodes();
-  await loadCommonSummary();
-  await loadAuditTable();
-
-  showNotify("Barcode Saved");
-}
-
-// ================= DELETE SINGLE (MY) =================
-async function deleteBarcodeSystem(code){
-
-  // delete my scans
-  await supabaseClient
-    .from("user_scans")
-    .delete()
-    .eq("user_id", currentUserId)
-    .eq("barcode", code);
-
-  // also remove stored stock
-  await supabaseClient
-    .from("expected_stock")
-    .delete()
-    .eq("barcode", code);
-
-  await loadMyBarcodes();
-  await loadCommonSummary();
-  await loadAuditTable();
-
-  updateDeleteUI();
-
-  showNotify("Barcode deleted ✔");
-}
-
-// ================= BULK DELETE (MY) =================
-async function deleteSelected() {
-  const checked = document.querySelectorAll(".row-check:checked");
-
-  if (!checked.length) {
-    showNotify("No barcodes selected");
-    return;
-  }
-
-  const barcodes = Array.from(checked).map(cb => cb.dataset.barcode);
-
-  const { error } = await supabaseClient
-    .from("user_scans")
-    .delete()
-    .eq("user_id", currentUserId)
-    .in("barcode", barcodes);
-
-  if (error) {
-    showNotify("Failed to delete selected");
-    return;
-  }
-
-  showNotify("Selected barcodes deleted");
   loadMyBarcodes();
   loadCommonSummary();
+  loadAuditTable();
 }
 
 // DELETE FOR ALL USERS //
@@ -259,114 +231,99 @@ async function confirmDelete(){
 
   if(deleteQueue.length === 0) return;
 
-  // remove from expected stock (stored)
-  await supabaseClient
-    .from("expected_stock")
-    .delete()
-    .in("barcode", deleteQueue);
-
-  // remove from scanned stock (all users)
-  await supabaseClient
-    .from("user_scans")
-    .delete()
-    .in("barcode", deleteQueue);
+  await supabaseClient.from("products").delete().in("barcode", deleteQueue);
+  await supabaseClient.from("scans").delete().in("barcode", deleteQueue);
 
   closeDeleteConfirm();
 
-  // reload dashboards
   await loadMyBarcodes();
   await loadCommonSummary();
   await loadAuditTable();
-  await updateDeleteUI();
 
-  showNotify("Deleted successfully ✔");
+  showNotify("Barcode removed from system ✔");
+
+  // page correction after delete
+  const pages = Math.ceil(totalMy / PAGE_SIZE);
+  if(myPage > pages) myPage = pages;
+  // reset checkboxes
+  const master = document.getElementById("selectAll");
+  if(master) master.checked = false;
+  const floating = document.getElementById("floatingDelete");
+  if(floating) floating.classList.add("hidden");
+
 }
 
+
 // ================= LOAD MY BARCODES =================
-async function loadMyBarcodes() {
+async function loadMyBarcodes(){
 
   const tbody = document.getElementById("myBarcodesBody");
   tbody.innerHTML = "";
 
-  // master stock
-  const { data: expected } = await supabaseClient
-    .from("expected_stock")
-    .select("barcode, quantity")
+  const maxPage = Math.max(1, Math.ceil(totalMy / PAGE_SIZE));
+  if(myPage > maxPage) myPage = maxPage;
 
-  // my scans
-  const { data: scanned } = await supabaseClient
-    .from("user_scans")
-    .select("barcode, quantity, created_at")
+  const from = (myPage - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+  
+  let query = supabaseClient
+  .from("products")
+  .select("*", { count: "exact" });
+  if(mySearch){
+    query = query.ilike("barcode", `%${mySearch}%`);
+  }
+  const result = await query.range(from, to);
+  const products = result.data || [];
+  totalCommon = result.count || 0;
+
+
+  const { data: myScans } = await supabaseClient
+    .from("scans")
+    .select("barcode, qty")
     .eq("user_id", currentUserId);
 
-  const scanMap = {};
-  const lastScanMap = {};
-
-  scanned?.forEach(s => {
-    scanMap[s.barcode] = s.quantity;
-    lastScanMap[s.barcode] = s.created_at;
+  const myMap = {};
+  myScans.forEach(s=>{
+    myMap[s.barcode]=(myMap[s.barcode]||0)+s.qty;
   });
 
-  // combine
-  const allCodes = new Set([
-    ...(expected || []).map(e => e.barcode),
-    ...(scanned || []).map(s => s.barcode)
-  ]);
+  products.forEach(p=>{
 
-  allCodes.forEach(code => {
+    const physical = myMap[p.barcode] || 0;
+    const book = p.book_count || 0;
 
-    const stored = expected?.find(e => e.barcode === code)?.quantity || 0;
-    const scannedQty = scanMap[code] || 0;
+    let status="",color="";
+    if(physical==book){status="Match";color="green";}
+    else if(physical<book){status=`Short ${book-physical}`;color="red";}
+    else{status=`Excess ${physical-book}`;color="orange";}
 
-    let status = "";
-    let color = "";
-
-    if (stored === scannedQty) {
-      status = "Match";
-      color = "green";
-    }
-    else if (scannedQty < stored) {
-      status = `Short ${stored - scannedQty}`;
-      color = "red";
-    }
-    else {
-      status = `Excess ${scannedQty - stored}`;
-      color = "orange";
-    }
-
-    const lastScan = lastScanMap[code]
-      ? new Date(lastScanMap[code]).toLocaleString()
-      : "-";
-
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
       <td>
-      <input type="checkbox"
-      class="row-check"
-      data-barcode="${code}"
-      onchange="syncSelectAll(); updateDeleteUI();">
-      ${code}
+        <input type="checkbox" class="row-check" data-barcode="${p.barcode}" onchange="updateDeleteUI()">
+        ${p.barcode}
       </td>
-
-      <td>${stored}</td>
-      <td>${scannedQty}</td>
+      <td>${p.item_name || "-"}</td>
+      <td>${book}</td>
+      <td>${physical}</td>
       <td style="color:${color};font-weight:600">${status}</td>
-      <td>${lastScan}</td>
       <td>
-      <span class="edit" onclick="editScan('${code}', ${scannedQty})">✏️</span>
-      <span class="delete"
-      onclick="event.preventDefault(); event.stopPropagation(); deleteBarcodeSystem('${code}')">🗑</span>
+        <span class="edit" onclick="openEditProduct('${p.barcode}','${p.item_name}')">✏️</span>
+        <span class="delete"
+        onclick="event.preventDefault();event.stopPropagation();openDeleteConfirm(['${p.barcode}'])">🗑</span>
       </td>
-
     `;
-
     tbody.appendChild(tr);
   });
+
+  // reset select-all every reload
   const master = document.getElementById("selectAll");
   if(master) master.checked = false;
+
+  renderMyPagination();
   updateDeleteUI();
-  syncSelectAll();
 }
+
 
 // EDIT FUNCTION //
 function editScan(barcode, qty){
@@ -376,60 +333,203 @@ function editScan(barcode, qty){
   document.getElementById("editModal").classList.remove("hidden");
 }
 
+// MY BARCODE PAGE NUMBER //
+function renderMyPagination(){
+
+  const pages = Math.ceil(totalMy / PAGE_SIZE);
+  const box = document.getElementById("paginationMy");
+
+  if(!box) return;
+
+  // 🧠 hide if 0 or 1 page
+  if(pages <= 1){
+    box.style.display = "none";
+    box.innerHTML = "";
+    return;
+  }
+
+  // 🧠 page overflow protection (CRITICAL)
+  if(myPage > pages){
+    myPage = pages;
+  }
+
+  box.style.display = "flex";
+
+  box.innerHTML = `
+    <button class="page-btn" onclick="prevMyPage()" ${myPage===1?'disabled':''}>‹ Prev</button>
+    <span class="page-info">Page ${myPage} of ${pages}</span>
+    <button class="page-btn" onclick="nextMyPage()" ${myPage===pages?'disabled':''}>Next ›</button>
+  `;
+}
+
+function nextMyPage(){
+  const pages = Math.ceil(totalMy / PAGE_SIZE);
+  if(myPage >= pages) return;
+  myPage++;
+  loadMyBarcodes();
+}
+
+function prevMyPage(){
+  if(myPage <= 1) return;
+  myPage--;
+  loadMyBarcodes();
+}
+
 // ================= COMMON SUMMARY =================
-async function loadCommonSummary() {
+async function loadCommonSummary(){
 
   const tbody = document.getElementById("commonSummaryBody");
   tbody.innerHTML = "";
 
-  const { data } = await supabaseClient
-    .from("user_scans")
-    .select("barcode, quantity, user_id");
+  const res = await supabaseClient
+  .from("products")
+  .select("*", { count: "exact", head: true });
+  const count = res.count || 0;
+  totalCommon = count || 0;
 
-  const summary = {};
+  const maxPage = Math.max(1, Math.ceil(totalCommon / PAGE_SIZE));
+  if(commonPage > maxPage) commonPage = maxPage;
 
-  data.forEach(row => {
-    if (!summary[row.barcode]) {
-      summary[row.barcode] = { total: 0, users: {} };
-    }
-    summary[row.barcode].total += row.quantity;
-    summary[row.barcode].users[row.user_id] =
-      (summary[row.barcode].users[row.user_id] || 0) + row.quantity;
+  // 1️⃣ Products (Book Count + Item Name)
+  const from = (commonPage - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+  let query = supabaseClient
+  .from("products")
+  .select("*", { count: "exact" });
+  if(commonSearch){
+    query = query.ilike("barcode", `%${commonSearch}%`);
+}
+
+const result = await query.range(from, to);
+const products = result.data || [];
+totalCommon = result.count || 0;
+
+
+
+
+  // 2️⃣ All scans with users
+  const { data: scans } = await supabaseClient
+    .from("scans")
+    .select("barcode, qty, user_id");
+
+  // user name map
+  const { data: profiles } = await supabaseClient
+    .from("profiles")
+    .select("id, username");
+
+  const userNameMap = {};
+  profiles.forEach(p => userNameMap[p.id] = p.username);
+
+  // build scan maps
+  const physicalMap = {};
+  const userMap = {};
+
+  scans.forEach(s => {
+
+    physicalMap[s.barcode] = (physicalMap[s.barcode] || 0) + s.qty;
+
+    if (!userMap[s.barcode]) userMap[s.barcode] = {};
+    userMap[s.barcode][s.user_id] =
+      (userMap[s.barcode][s.user_id] || 0) + s.qty;
   });
 
-  Object.entries(summary).forEach(([barcode, info]) => {
+  products.forEach(p => {
 
-    const usersHtml = Object.entries(info.users)
-      .map(([uid, count]) => {
-        const name = uid === currentUserId ? "you" : userMap[uid] || "unknown";
-        return `<span class="chip">${name}: ${count}</span>`;
-      }).join(" ");
+    const book = p.book_count || 0;
+    const physical = physicalMap[p.barcode] || 0;
+
+    // status
+    let status = "", color = "";
+    if (physical === book) {
+      status = "Match"; color = "green";
+    } else if (physical < book) {
+      status = `Short ${book - physical}`; color = "red";
+    } else {
+      status = `Excess ${physical - book}`; color = "orange";
+    }
+
+    // user counts text
+    let userCounts = "-";
+    if (userMap[p.barcode]) {
+      userCounts = Object.entries(userMap[p.barcode])
+        .map(([uid, count]) =>
+          `${userNameMap[uid] || "unknown"}: ${count}`
+        )
+        .join(", ");
+    }
 
     const tr = document.createElement("tr");
-
     tr.innerHTML = `
-      <td>
-        <input type="checkbox"
-          class="common-check"
-          data-barcode="${barcode}"
-          onchange="syncCommonSelectAll(); updateCommonDeleteUI();">
-        ${barcode}
-      </td>
-      <td>${usersHtml}</td>
-      <td>${info.total}</td>
-      <td>
-        <span class="delete" onclick="event.preventDefault(); event.stopPropagation(); openDeleteConfirm(['${barcode}'])">🗑</span>
-      </td>
+    <td>
+    <input type="checkbox"
+    class="common-check"
+    data-barcode="${p.barcode}"
+    onchange="updateCommonDeleteUI(); syncCommonSelectAll();">
+    ${p.barcode}
+    </td>
+    <td>${p.item_name || "-"}</td>
+    <td>${book}</td>
+    <td>${physical}</td>
+    <td>${userCounts}</td>
+    <td>${physical}</td>
+    <td style="color:${color};font-weight:600">${status}</td>
+    <td>
+    <span class="delete"
+    onclick="openDeleteConfirm(['${p.barcode}'])">🗑</span>
+    </td>
     `;
 
     tbody.appendChild(tr);
   });
 
+  renderCommonPagination();
   updateCommonDeleteUI();
 }
 
+// COMMON PAGE NUMBER //
+function renderCommonPagination(){
+
+  const pages = Math.ceil(totalCommon / PAGE_SIZE);
+  const box = document.getElementById("paginationCommon");
+
+  if(!box) return;
+
+  if(pages <= 1){
+    box.style.display = "none";
+    box.innerHTML = "";
+    return;
+  }
+
+  if(commonPage > pages){
+    commonPage = pages;
+  }
+
+  box.style.display = "flex";
+
+  box.innerHTML = `
+    <button class="page-btn" onclick="prevCommonPage()" ${commonPage===1?'disabled':''}>‹ Prev</button>
+    <span class="page-info">Page ${commonPage} of ${pages}</span>
+    <button class="page-btn" onclick="nextCommonPage()" ${commonPage===pages?'disabled':''}>Next ›</button>
+  `;
+}
+
+
+function nextCommonPage(){
+  const pages = Math.ceil(totalCommon / PAGE_SIZE);
+  if(commonPage >= pages) return;
+  commonPage++;
+  loadCommonSummary();
+}
+
+function prevCommonPage(){
+  if(commonPage <= 1) return;
+  commonPage--;
+  loadCommonSummary();
+}
+
 function toggleCommonSelectAll(master){
-  const checkboxes = document.querySelectorAll(".common-check");
+
+  const checkboxes = document.querySelectorAll("#commonSummaryBody .common-check");
 
   checkboxes.forEach(cb=>{
     cb.checked = master.checked;
@@ -439,17 +539,19 @@ function toggleCommonSelectAll(master){
 }
 
 function syncCommonSelectAll(){
-  const all = document.querySelectorAll(".common-check");
-  const checked = document.querySelectorAll(".common-check:checked");
+
+  const all = document.querySelectorAll("#commonSummaryBody .common-check");
+  const checked = document.querySelectorAll("#commonSummaryBody .common-check:checked");
   const master = document.getElementById("selectAllCommon");
 
   if(!master) return;
+
   master.checked = all.length > 0 && all.length === checked.length;
 }
 
 function updateCommonDeleteUI(){
 
-  const checked = document.querySelectorAll(".common-check:checked");
+  const checked = document.querySelectorAll("#commonSummaryBody .common-check:checked");
   const floating = document.getElementById("floatingCommonDelete");
   const count = document.getElementById("commonDeleteCount");
 
@@ -463,9 +565,9 @@ function updateCommonDeleteUI(){
   }
 }
 
-async function deleteSelectedCommonBarcodes(){
+async function deleteSelectedCommon(){
 
-  const checked = document.querySelectorAll(".common-check:checked");
+  const checked = document.querySelectorAll("#commonSummaryBody .common-check:checked");
 
   if(checked.length === 0){
     showNotify("No barcode selected");
@@ -474,98 +576,56 @@ async function deleteSelectedCommonBarcodes(){
 
   const barcodes = Array.from(checked).map(cb => cb.dataset.barcode);
 
-  // delete stored stock
-  const { error: stockError } = await supabaseClient
-    .from("expected_stock")
-    .delete()
-    .in("barcode", barcodes);
-
-  // delete scans of ALL users
-  const { error: scanError } = await supabaseClient
-    .from("user_scans")
-    .delete()
-    .in("barcode", barcodes);
-
-  if(stockError || scanError){
-    console.error(stockError || scanError);
-    showNotify("Delete failed");
-    return;
-  }
-
-  // reload EVERYTHING
-  await loadMyBarcodes();
-  await loadCommonSummary();
-  await loadAuditTable();
-
-  updateCommonDeleteUI();
-
-  showNotify("Removed from system ✔");
+  openDeleteConfirm(barcodes);
 }
+
 
 // ================= SEARCH MY BARCODE =================
-function searchBarcode() {
-  const input = document.getElementById("searchInput").value.toLowerCase();
-  const rows = document.querySelectorAll("#myBarcodesBody tr");
-
-  rows.forEach(row => {
-    const barcodeText = row.innerText.toLowerCase();
-    if (barcodeText.includes(input)) {
-      row.style.display = "";
-    } else {
-      row.style.display = "none";
-    }
-  });
+function searchBarcode(){
+  mySearch = document.getElementById("searchInput").value.trim();
+  myPage = 1;   // reset to first page
+  loadMyBarcodes();
 }
+
 
 function clearSearch(){
   document.getElementById("searchInput").value = "";
-  searchBarcode();
+  mySearch = "";
+  myPage = 1;
+  loadMyBarcodes();
 }
+
 
 // ================= SEARCH COMMON SUMMARY =================
-function searchCommonSummary() {
-  const input = document.getElementById("commonSearchInput").value.toLowerCase();
-  const rows = document.querySelectorAll("#commonSummaryBody tr");
-
-  rows.forEach(row => {
-    const rowText = row.innerText.toLowerCase();
-    if (rowText.includes(input)) {
-      row.style.display = "";
-    } else {
-      row.style.display = "none";
-    }
-  });
+function searchCommonSummary(){
+  commonSearch = document.getElementById("commonSearchInput").value.trim();
+  commonPage = 1;
+  loadCommonSummary();
 }
+
 
 function clearCommonSearch(){
   document.getElementById("commonSearchInput").value = "";
-  searchCommonSummary();
+  commonSearch = "";
+  commonPage = 1;
+  loadCommonSummary();
 }
 
 // ================= SEARCH AUDIT TABLE =================
-function searchAudit() {
-  const input = document
-    .getElementById("auditSearchInput")
-    .value
-    .toLowerCase();
-
-  const rows = document.querySelectorAll("#auditBody tr");
-
-  rows.forEach(row => {
-    const text = row.innerText.toLowerCase();
-
-    if (text.includes(input)) {
-      row.style.display = "";
-    } else {
-      row.style.display = "none";
-    }
-  });
+function searchAudit(){
+  auditSearch = document.getElementById("auditSearchInput").value.trim();
+  auditPage = 1;
+  loadAuditTable();
 }
 
-function clearAuditSearch() {
+
+function clearAuditSearch(){
   document.getElementById("auditSearchInput").value = "";
-  searchAudit();
+  auditSearch = "";
+  auditPage = 1;
+  loadAuditTable();
 }
+
 
 // ================= EDIT BARCODE =================
 let editingId = null;
@@ -586,81 +646,74 @@ function closeEditModal() {
 }
 
 // SAVE LOGIC //
-async function saveEdit() {
+async function saveEdit(){
 
-  const newBarcode = document.getElementById("editBarcodeInput").value.trim();
-  const newQty = parseInt(document.getElementById("editQtyInput").value);
+  const barcode = document.getElementById("editBarcodeInput").value;
+  const qty = parseInt(document.getElementById("editQtyInput").value);
+  const name = document.getElementById("editNameInput").value;
 
-  if (!newBarcode) {
-    showNotify("Barcode cannot be empty");
-    return;
-  }
-
-  if (isNaN(newQty) || newQty < 0) {
+  if(isNaN(qty) || qty < 0){
     showNotify("Invalid quantity");
     return;
   }
 
-  const { error } = await supabaseClient
-    .from("user_scans")
-    .update({
-      barcode: newBarcode,
-      quantity: newQty
-    })
-    .eq("user_id", currentUserId)
-    .eq("barcode", editingId);
-
-
-  if (error) {
-    showNotify("Update failed");
-    return;
-  }
-
-  closeEditModal();
-
-  loadMyBarcodes();
-  loadCommonSummary();
-
-  showNotify("Updated successfully");
-}
-
-// DELETE SCAN //
-async function deleteMyScan(barcode){
-
-  if(!confirm("Reset your scanned count for this barcode?")) return;
-
+  // 1️⃣ update item name only in master table
   await supabaseClient
-    .from("user_scans")
+    .from("products")
+    .update({ item_name: name })
+    .eq("barcode", barcode);
+
+  // 2️⃣ delete my old scans for this barcode
+  await supabaseClient
+    .from("scans")
     .delete()
     .eq("user_id", currentUserId)
     .eq("barcode", barcode);
+
+  // 3️⃣ recreate scans to match quantity (physical count)
+  if(qty > 0){
+
+    const rows = [];
+    for(let i=0;i<qty;i++){
+      rows.push({
+        user_id: currentUserId,
+        barcode: barcode,
+        qty: 1
+      });
+    }
+
+    // insert in chunks (important for supabase)
+    while(rows.length){
+      await supabaseClient.from("scans").insert(rows.splice(0,500));
+    }
+  }
+
+  closeEditModal();
 
   await loadMyBarcodes();
   await loadCommonSummary();
   await loadAuditTable();
 
-  showNotify("Scan reset");
+  showNotify("Physical count updated ✔");
 }
+
 
 function updateDeleteUI(){
 
-  setTimeout(()=>{
+  const checked = document.querySelectorAll("#myBarcodesBody .row-check:checked");
+  const floating = document.getElementById("floatingDelete");
+  const count = document.getElementById("deleteCount");
 
-    const checked = document.querySelectorAll("#myBarcodesBody .row-check:checked");
-    const floating = document.getElementById("floatingDelete");
-    const count = document.getElementById("deleteCount");
+  if(!floating) return;
 
-    if(!floating) return;
-
-    if(checked.length > 0){
-      floating.classList.remove("hidden");
-      count.textContent = checked.length;
-    }else{
-      floating.classList.add("hidden");
-    }
-
-  }, 0);
+  if(checked.length>0){
+    floating.classList.remove("hidden");
+    count.textContent = checked.length;
+  }else{
+    floating.classList.add("hidden");
+  }
 }
+
 
 // Read Excel //
 document.getElementById("stockUpload").addEventListener("change", handleStockUpload);
@@ -675,72 +728,46 @@ async function handleStockUpload(e) {
 
     const data = new Uint8Array(evt.target.result);
     const workbook = XLSX.read(data, { type: "array" });
-
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-    // read rows as ARRAY
-    const rows = XLSX.utils.sheet_to_json(sheet, {
-      header: 1,
-      raw: false,      // ⭐ IMPORTANT (prevents number conversion)
-      defval: ""
-    });
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
 
-    // remove old stock FIRST
-    await supabaseClient
-    .from("expected_stock")
-    .delete()
-    .neq("barcode", "");
+    let batch = [];
 
-
-    const insertData = [];
-
-    // start from A2 B2 (skip header row)
     for (let i = 1; i < rows.length; i++) {
+      let barcode = String(rows[i][0]).trim();
+      let qty = parseInt(rows[i][1]);
+      let name = String(rows[i][2] || "");
 
-      const row = rows[i];
+      if (!barcode || isNaN(qty)) continue;
 
-      if (!row || row.length < 2) continue;
-
-      let barcode = String(row[0]).trim();
-      let quantity = parseInt(row[1]);
-
-      // keep alphabets (VERY IMPORTANT)
-      barcode = barcode.replace(/\.0$/, "");
-
-      if (!barcode || isNaN(quantity)) continue;
-
-      insertData.push({
+      batch.push({
         barcode: barcode,
-        quantity: quantity
+        item_name: name,
+        book_count: qty
       });
+
+      // insert in chunks of 500
+      if (batch.length === 500) {
+        await supabaseClient.from("products").upsert(batch);
+        batch = [];
+      }
     }
 
-    if (insertData.length === 0) {
-      showNotify("No valid rows found in Excel");
-      return;
+    if (batch.length > 0) {
+      await supabaseClient.from("products").upsert(batch);
     }
 
-    // insert ALL rows at once (fast + correct)
-    const { error } = await supabaseClient
-      .from("expected_stock")
-      .insert(insertData);
+    showNotify("Upload completed ✔");
 
-    if (error) {
-      console.error(error);
-      showNotify("Upload failed");
-      return;
-    }
-
-    showNotify("Stock Excel uploaded successfully ✔");
-
-    await new Promise(r => setTimeout(r, 300));
-    await loadMyBarcodes();
-    await loadCommonSummary();
-    await loadAuditTable();
+    loadMyBarcodes();
+    loadCommonSummary();
+    loadAuditTable();
   };
 
   reader.readAsArrayBuffer(file);
 }
+
 
  // COMPARE EXCEL //
 async function compareStock() {
@@ -749,64 +776,141 @@ async function compareStock() {
 
 
 // ================= DELETE COMMON (SINGLE) =================
-function deleteSingleBarcode(code){
-  openDeleteConfirm([code]);
+async function deleteProduct(barcode){
+
+  if(!confirm("Delete this barcode for ALL users?")) return;
+
+  await supabaseClient.from("products").delete().eq("barcode",barcode);
+  await supabaseClient.from("scans").delete().eq("barcode",barcode);
+
+  loadMyBarcodes();
+  loadCommonSummary();
+  loadAuditTable();
 }
 
-// ================= DELETE COMMON (BULK) =================
-async function deleteSelectedMyBarcodes(){
 
-  const checked = document.querySelectorAll(".row-check:checked");
+// ================= DELETE COMMON (BULK) =================
+function deleteSelectedMyBarcodes(){
+
+  const checked = document.querySelectorAll("#myBarcodesBody .row-check:checked");
 
   if(checked.length === 0){
     showNotify("No barcode selected");
     return;
   }
 
-  const barcodes = Array.from(checked).map(cb => cb.dataset.barcode);
+  const barcodes = Array.from(checked).map(cb=>cb.dataset.barcode);
 
-  await supabaseClient
-    .from("user_scans")
-    .delete()
-    .eq("user_id", currentUserId)
-    .in("barcode", barcodes);
-
-  await loadMyBarcodes();
-  await loadCommonSummary();
-  await loadAuditTable();
-
-  updateDeleteUI();
-
-  showNotify("Selected barcodes deleted");
+  openDeleteConfirm(barcodes);
 }
+
+
+async function openEditProduct(barcode, name){
+
+  // barcode
+  document.getElementById("editBarcodeInput").value = barcode;
+  document.getElementById("editBarcodeInput").disabled = true;
+
+  // item name
+  document.getElementById("editNameInput").value = name || "";
+
+  // 🔴 GET MY PHYSICAL COUNT
+  const { data: myScans } = await supabaseClient
+    .from("scans")
+    .select("qty")
+    .eq("barcode", barcode)
+    .eq("user_id", currentUserId);
+
+  let myPhysical = 0;
+
+  if(myScans){
+    myScans.forEach(s => myPhysical += s.qty);
+  }
+
+  // set physical count in modal
+  document.getElementById("editQtyInput").value = myPhysical;
+
+  document.getElementById("editModal").classList.remove("hidden");
+}
+
+
 
 // ================= DOWNLOAD MY BARCODES EXCEL =================
 async function downloadMyBarcodesExcel() {
-  const { data, error } = await supabaseClient
+
+  if (!currentUserId) {
+    showNotify("User not ready");
+    return;
+  }
+
+  // 1️⃣ Book Count (uploaded excel stock)
+  const { data: expected } = await supabaseClient
+    .from("expected_stock")
+    .select("barcode, quantity");
+
+  // 2️⃣ My Physical Count (my scans)
+  const { data: scanned } = await supabaseClient
     .from("user_scans")
     .select("barcode, quantity, created_at")
-    .eq("user_id", currentUserId)
-    .order("created_at", { ascending: false });
+    .eq("user_id", currentUserId);
 
-  if (error || !data || !data.length) {
+  if ((!expected || expected.length === 0) && (!scanned || scanned.length === 0)) {
     showNotify("No data to export");
     return;
   }
 
-  const formatted = data.map(row => ({
-    Barcode: row.barcode,
-    Quantity: row.quantity,
-    "Last Scanned": new Date(row.created_at).toLocaleDateString()
-  }));
+  const bookMap = {};
+  const physicalMap = {};
+  const lastScanMap = {};
 
-  const worksheet = XLSX.utils.json_to_sheet(formatted);
+  // Book count
+  expected?.forEach(row => {
+    bookMap[row.barcode] = Number(row.quantity);
+  });
+
+  // Physical count
+  scanned?.forEach(row => {
+    physicalMap[row.barcode] = Number(row.quantity);
+    lastScanMap[row.barcode] = row.created_at;
+  });
+
+  // combine all barcodes
+  const allCodes = new Set([
+    ...Object.keys(bookMap),
+    ...Object.keys(physicalMap)
+  ]);
+
+  const rows = [];
+
+  allCodes.forEach(code => {
+
+    const bookCount = bookMap[code] || 0;
+    const physicalCount = physicalMap[code] || 0;
+
+    let status = "";
+    if (bookCount === physicalCount) status = "Match";
+    else if (physicalCount < bookCount) status = `Short ${bookCount - physicalCount}`;
+    else status = `Excess ${physicalCount - bookCount}`;
+
+    const lastScan = lastScanMap[code]
+      ? new Date(lastScanMap[code]).toLocaleString()
+      : "-";
+
+    rows.push({
+      Barcode: code,
+      "Book Count": bookCount,
+      "Physical Count": physicalCount,
+      Status: status,
+      "Last Scanned": lastScan
+    });
+  });
+
+  // create excel
+  const worksheet = XLSX.utils.json_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "My Barcodes");
 
-  // ✅ Required for mobile browsers
-  await new Promise(r => setTimeout(r, 0));
-
-  XLSX.writeFile(workbook, "my-barcodes.xlsx");
+  XLSX.writeFile(workbook, "my-barcodes-dashboard.xlsx");
 }
 
 // ================= DOWNLOAD COMMON SUMMARY EXCEL =================
@@ -908,34 +1012,27 @@ async function openScanner() {
   }
 }
 
-async function autoSaveBarcode(barcode) {
+async function autoSaveBarcode(barcode){
 
-  if (!userReady || !currentUserId) return;
+  await supabaseClient.from("scans").insert({
+    user_id:currentUserId,
+    barcode:barcode,
+    qty:1
+  });
 
-  const { data: existing } = await supabaseClient
-    .from("user_scans")
-    .select("*")
-    .eq("user_id", currentUserId)
-    .eq("barcode", barcode)
+  const {data}=await supabaseClient
+    .from("products")
+    .select("barcode")
+    .eq("barcode",barcode)
     .maybeSingle();
 
-  if (existing) {
-    await supabaseClient
-      .from("user_scans")
-      .update({ quantity: existing.quantity + 1 })
-      .eq("id", existing.id);
-  } else {
-    await supabaseClient
-      .from("user_scans")
-      .insert({
-        user_id: currentUserId,
-        barcode,
-        quantity: 1
-      });
+  if(!data){
+    await supabaseClient.from("products").insert({
+      barcode:barcode,
+      item_name:"",
+      book_count:0
+    });
   }
-
-  // wait for commit
-  await new Promise(resolve => setTimeout(resolve, 350));
 
   await loadMyBarcodes();
   await loadCommonSummary();
@@ -992,149 +1089,187 @@ function closeScanner(force = false) {
 }
 
 // ================= LOAD AUDIT TABLE =================
-async function loadAuditTable() {
-
-  if (!currentUserId) return;
+async function loadAuditTable(){
 
   const tbody = document.getElementById("auditBody");
-  if (!tbody) return;
-
   tbody.innerHTML = "";
-  // get expected stock (excel uploaded)
-  const { data: expected } = await supabaseClient
-  .from("expected_stock")
-  .select("barcode, quantity")
 
-  // get scanned stock
-  const { data: scanned } = await supabaseClient
-    .from("user_scans")
-    .select("barcode, quantity")
+  const res = await supabaseClient
+  .from("products")
+  .select("*", { count: "exact", head: true });
+  const count = res.count || 0;
+  totalAudit = count || 0;
 
-  expectedStockCache = {};
-  scannedStockCache = {};
+  const maxPage = Math.max(1, Math.ceil(totalAudit / PAGE_SIZE));
+  if(auditPage > maxPage) auditPage = maxPage;
 
-  expected?.forEach(item => {
-    expectedStockCache[item.barcode] = item.quantity;
+
+  // 1️⃣ Uploaded stock (BOOK COUNT)
+  const from = (auditPage - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+  let query = supabaseClient
+  .from("products")
+  .select("*", { count: "exact" });
+  if(auditSearch){
+  query = query.ilike("barcode", `%${auditSearch}%`);
+}
+
+const result = await query.range(from, to);
+const products = result.data || [];
+totalCommon = result.count || 0;
+
+
+
+  // 2️⃣ All users scans (PHYSICAL COUNT)
+  const { data: allScans } = await supabaseClient
+    .from("scans")
+    .select("barcode, qty");
+
+  // Create total scan map
+  const physicalMap = {};
+
+  allScans.forEach(s=>{
+    physicalMap[s.barcode] = (physicalMap[s.barcode] || 0) + s.qty;
   });
 
-  scanned?.forEach(item => {
-    scannedStockCache[item.barcode] = item.quantity;
-  });
-
-  const allCodes = new Set([
-    ...Object.keys(expectedStockCache),
-    ...Object.keys(scannedStockCache)
+  // combine all barcodes
+  const barcodeSet = new Set([
+    ...products.map(p=>p.barcode),
+    ...Object.keys(physicalMap)
   ]);
 
-  allCodes.forEach(code => {
+  barcodeSet.forEach(code=>{
 
-    const stored = expectedStockCache[code] || 0;
-    const scannedQty = scannedStockCache[code] || 0;
-    const diff = scannedQty - stored;
+    const product = products.find(p=>p.barcode === code);
 
-    let status = "";
-    let color = "";
+    const book = product ? (product.book_count || 0) : 0;
+    const name = product ? (product.item_name || "-") : "-";
+    const physical = physicalMap[code] || 0;
 
-    if (diff === 0) {
-      status = "Match";
-      color = "green";
+    let status="",color="";
+
+    if(book === physical){
+      status="Match";
+      color="green";
     }
-    else if (diff < 0) {
-      status = `Short ${Math.abs(diff)}`;
-      color = "red";
+    else if(physical < book){
+      status=`Short ${book-physical}`;
+      color="red";
     }
-    else {
-      status = `Excess ${diff}`;
-      color = "orange";
+    else{
+      status=`Excess ${physical-book}`;
+      color="orange";
     }
 
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
       <td>${code}</td>
-      <td>${stored}</td>
-      <td>${scannedQty}</td>
-      <td style="color:${color}; font-weight:600">${status}</td>
+      <td>${name}</td>
+      <td>${book}</td>
+      <td>${physical}</td>
+      <td style="color:${color};font-weight:600">${status}</td>
     `;
 
     tbody.appendChild(tr);
   });
+
+  renderAuditPagination();
+}
+
+// AUDIT PAGE NUMBER //
+function renderAuditPagination(){
+
+  const pages = Math.ceil(totalAudit / PAGE_SIZE);
+  const box = document.getElementById("paginationAudit");
+
+  if(!box) return;
+
+  if(pages <= 1){
+    box.style.display = "none";
+    box.innerHTML = "";
+    return;
+  }
+
+  if(auditPage > pages){
+    auditPage = pages;
+  }
+
+  box.style.display = "flex";
+
+  box.innerHTML = `
+    <button class="page-btn" onclick="prevAuditPage()" ${auditPage===1?'disabled':''}>‹ Prev</button>
+    <span class="page-info">Page ${auditPage} of ${pages}</span>
+    <button class="page-btn" onclick="nextAuditPage()" ${auditPage===pages?'disabled':''}>Next ›</button>
+  `;
+}
+
+
+function nextAuditPage(){
+  const pages = Math.ceil(totalAudit / PAGE_SIZE);
+  if(auditPage >= pages) return;
+  auditPage++;
+  loadAuditTable();
+}
+
+function prevAuditPage(){
+  if(auditPage <= 1) return;
+  auditPage--;
+  loadAuditTable();
 }
 
 // ================= DOWNLOAD AUDIT REPORT EXCEL =================
-async function downloadAuditExcel() {
+async function downloadAuditExcel(){
 
-  if (!currentUserId) {
-    showNotify("User not ready");
-    return;
-  }
+  const { data: products } = await supabaseClient
+    .from("products")
+    .select("*");
 
-  // expected stock (uploaded excel)
-  const { data: expected } = await supabaseClient
-    .from("expected_stock")
-    .select("barcode, quantity")
-    .eq("user_id", currentUserId);
+  const { data: scans } = await supabaseClient
+    .from("scans")
+    .select("barcode, qty");
 
-  // scanned stock
-  const { data: scanned } = await supabaseClient
-    .from("user_scans")
-    .select("barcode, quantity")
-    .eq("user_id", currentUserId);
-
-  if ((!expected || expected.length === 0) && (!scanned || scanned.length === 0)) {
-    showNotify("No audit data to export");
-    return;
-  }
-
-  const expectedMap = {};
-  const scannedMap = {};
-
-  expected?.forEach(item => {
-    expectedMap[item.barcode] = item.quantity;
-  });
-
-  scanned?.forEach(item => {
-    scannedMap[item.barcode] = item.quantity;
+  const physicalMap = {};
+  scans.forEach(s=>{
+    physicalMap[s.barcode]=(physicalMap[s.barcode]||0)+s.qty;
   });
 
   const allCodes = new Set([
-    ...Object.keys(expectedMap),
-    ...Object.keys(scannedMap)
+    ...products.map(p=>p.barcode),
+    ...Object.keys(physicalMap)
   ]);
 
-  const rows = [];
+  const rows=[];
 
-  allCodes.forEach(code => {
-    const stored = expectedMap[code] || 0;
-    const scannedQty = scannedMap[code] || 0;
+  allCodes.forEach(code=>{
 
-    let status = "";
+    const product = products.find(p=>p.barcode===code);
 
-    if (stored === scannedQty) {
-      status = "Match";
-    }
-    else if (scannedQty < stored) {
-      status = `Short ${stored - scannedQty}`;
-    }
-    else {
-      status = `Excess ${scannedQty - stored}`;
-    }
+    const name = product?.item_name || "-";
+    const book = product?.book_count || 0;
+    const physical = physicalMap[code] || 0;
+
+    let status="";
+    if(book===physical) status="Match";
+    else if(physical<book) status=`Short ${book-physical}`;
+    else status=`Excess ${physical-book}`;
 
     rows.push({
       Barcode: code,
-      Stored: stored,
-      Scanned: scannedQty,
+      "Item Name": name,
+      "Book Count": book,
+      "Physical Count": physical,
       Status: status
     });
+
   });
 
-  // create excel
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Audit Report");
+  const ws=XLSX.utils.json_to_sheet(rows);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Audit Compare");
 
-  await new Promise(r => setTimeout(r, 0));
-  XLSX.writeFile(workbook, "audit-report.xlsx");
+  XLSX.writeFile(wb,"Audit-Compare-Report.xlsx");
 }
+
 
 // ================= LOGOUT =================
 async function logout() {
