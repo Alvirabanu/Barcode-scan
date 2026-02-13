@@ -35,6 +35,8 @@ async function fetchAll(tableName, columns="*"){
   return allData;
 }
 
+let lastScanValue = null;
+let lastScanTimestamp = 0;
 let savingScan = false;
 let currentUserId = null;
 // pagination states
@@ -490,8 +492,6 @@ async function loadCommonSummary(){
 
 async function openScanEditor(barcode){
 
-  closeScanner(true);   // ⭐ CRITICAL FIX
-
   document.getElementById("scanEditor").classList.remove("hidden");
 
   document.getElementById("scanBarcode").value = barcode;
@@ -546,6 +546,7 @@ async function openScanEditor(barcode){
       : `Excess ${totalPhysical-productSafe?.book_count}`;
 
   document.getElementById("scanStatus").innerText = status;
+  scanLock = false;
 }
 
 async function saveScanEdit(){
@@ -1102,7 +1103,7 @@ async function openScanner() {
 
   try {
 
-    // stop previous camera safely
+    // stop any previous camera
     if (html5QrCode) {
       try {
         await html5QrCode.stop();
@@ -1110,6 +1111,7 @@ async function openScanner() {
       html5QrCode = null;
     }
 
+    // create scanner
     html5QrCode = new Html5Qrcode("reader");
 
     await html5QrCode.start(
@@ -1119,40 +1121,49 @@ async function openScanner() {
         qrbox: { width: 300, height: 140 }
       },
 
-      // 🔥 SCAN SUCCESS CALLBACK
+      // ===== WHEN BARCODE IS DETECTED =====
       async (decodedText) => {
 
+        // prevent multiple triggers
         if (scanLock) return;
         scanLock = true;
 
         try {
 
-          // STOP CAMERA FIRST (VERY IMPORTANT)
+          // STOP CAMERA FIRST
           if (html5QrCode) {
             await html5QrCode.stop();
             html5QrCode = null;
           }
 
-          // play beep
+          // hide camera UI
+          document.getElementById("scannerOverlay").classList.add("hidden");
+
+          // beep sound
           beep.currentTime = 0;
           beep.play().catch(()=>{});
 
-          // open popup editor
           const barcode = normalizeBarcode(decodedText);
-          // anti-duplicate protection
+
+          // duplicate scan protection
           const now = Date.now();
-          if(barcode === lastScanValue && (now - lastScanTimestamp) < 1500){
+          if (barcode === lastScanValue && (now - lastScanTimestamp) < 1500) {
             scanLock = false;
             return;
           }
+
           lastScanValue = barcode;
           lastScanTimestamp = now;
-          await handleScannedBarcode(barcode);
-        
-        } catch(err) {
+
+          // allow camera to release before popup
+          setTimeout(() => {
+            openScanEditor(barcode);
+          }, 150);
+
+        } catch (err) {
           console.error("SCAN ERROR:", err);
           scanLock = false;
-          openScanner();
+          closeScanner(true);
         }
       }
     );
@@ -1177,8 +1188,13 @@ function normalizeBarcode(code){
 
 
 async function handleScannedBarcode(rawCode){
+
   const barcode = normalizeBarcode(rawCode).trim();
-  await openScanEditor(barcode);
+
+  // let browser breathe (VERY IMPORTANT)
+  setTimeout(async () => {
+    await openScanEditor(barcode);
+  }, 120);
 }
 
 
