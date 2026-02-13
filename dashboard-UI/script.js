@@ -503,11 +503,16 @@ async function openScanEditor(barcode){
     .eq("barcode", barcode)
     .maybeSingle();
 
+    const productSafe = product || null;
+
   // get all scans
-  const { data: scans } = await supabaseClient
-    .from("scans")
-    .select("user_id, qty")
-    .eq("barcode", barcode);
+  const { data: scansData } = await supabaseClient
+  .from("scans")
+  .select("user_id, qty")
+  .eq("barcode", barcode);
+  
+  const scans = scansData || [];
+
 
   // NEW ITEM (not uploaded in excel)
   if(!product){
@@ -520,8 +525,8 @@ async function openScanEditor(barcode){
   }
 
   // existing item
-  document.getElementById("scanItemName").value = product.item_name || "";
-  document.getElementById("scanBook").value = product.book_count || 0;
+  document.getElementById("scanItemName").value = productSafe?.item_name || "";
+  document.getElementById("scanBook").value = productSafe?.book_count || 0;
 
   let totalPhysical = 0;
   let userText = "";
@@ -531,14 +536,14 @@ async function openScanEditor(barcode){
     userText += `${userMap[s.user_id] || "unknown"}: ${s.qty}\n`;
   });
 
-  document.getElementById("scanPhysical").value = totalPhysical;
+  document.getElementById("scanPhysical").value = 1;
   document.getElementById("scanUsers").innerText = userText || "-";
 
-  const status = totalPhysical == product.book_count
+  const status = totalPhysical == productSafe?.book_count
     ? "Match"
-    : totalPhysical < product.book_count
-      ? `Short ${product.book_count-totalPhysical}`
-      : `Excess ${totalPhysical-product.book_count}`;
+    : totalPhysical < productSafe?.book_count
+      ? `Short ${productSafe?.book_count-totalPhysical}`
+      : `Excess ${totalPhysical-productSafe?.book_count}`;
 
   document.getElementById("scanStatus").innerText = status;
 }
@@ -594,8 +599,10 @@ async function saveScanEdit(){
 
 function cancelScanEdit(){
   document.getElementById("scanEditor").classList.add("hidden");
+  scanLock = false;
   openScanner();
 }
+
 
 // COMMON PAGE NUMBER //
 function renderCommonPagination(){
@@ -1082,18 +1089,24 @@ async function downloadCommonSummaryExcel(){
 
 // ================= CAMERA =================
 async function openScanner() {
+
   if (!userReady) {
     showNotify("Please wait, loading user...");
     return;
   }
+
   const overlay = document.getElementById("scannerOverlay");
   overlay.classList.remove("hidden");
 
   scannedCode = null;
 
   try {
+
+    // stop previous camera safely
     if (html5QrCode) {
-      await html5QrCode.stop().catch(() => {});
+      try {
+        await html5QrCode.stop();
+      } catch(e){}
       html5QrCode = null;
     }
 
@@ -1101,39 +1114,54 @@ async function openScanner() {
 
     await html5QrCode.start(
       { facingMode: "environment" },
-      { 
-        fps: 6, 
-        aspectRatio: 1.777,
-        qrbox: { width: 320, height: 120 } // WIDE rectangle
-        },
-      (decodedText) => {
-        if(scanLock) return;   // 🔒 prevents multiple scans
-        scanLock = true;
-        
-        // stop camera IMMEDIATELY
-        if(html5QrCode){
-          html5QrCode.stop().catch(()=>{});
-        }
-        
-        beep.currentTime = 0;
-        beep.play().catch(()=>{});
-        
-        handleScannedBarcode(decodedText);
-      }
+      {
+        fps: 8,
+        qrbox: { width: 300, height: 140 }
+      },
 
+      // 🔥 SCAN SUCCESS CALLBACK
+      async (decodedText) => {
+
+        if (scanLock) return;
+        scanLock = true;
+
+        try {
+
+          // STOP CAMERA FIRST (VERY IMPORTANT)
+          if (html5QrCode) {
+            await html5QrCode.stop();
+            html5QrCode = null;
+          }
+
+          // play beep
+          beep.currentTime = 0;
+          beep.play().catch(()=>{});
+
+          // open popup editor
+          await handleScannedBarcode(decodedText);
+
+        } catch(err) {
+          console.error("SCAN ERROR:", err);
+          scanLock = false;
+          openScanner();
+        }
+      }
     );
+
   } catch (err) {
-    console.error("Camera error:", err);
+    console.error("Camera start error:", err);
     showNotify("Camera permission denied or camera not available");
     closeScanner(true);
   }
 }
 
+
 function normalizeBarcode(code){
   return String(code)
-    .replace(/[^0-9A-Za-z]/g,'')   // remove noise
+    .replace(/\s+/g,'')  // remove spaces only
     .trim();
 }
+
 
 async function handleScannedBarcode(rawCode){
 
@@ -1273,8 +1301,8 @@ totalAudit = result.count || 0;
 
     const product = products.find(p=>p.barcode === code);
 
-    const book = product ? (product.book_count || 0) : 0;
-    const name = product ? (product.item_name || "-") : "-";
+    const book = product ? (productSafe?.book_count || 0) : 0;
+    const name = product ? (productSafe?.item_name || "-") : "-";
     const physical = physicalMap[code] || 0;
 
     let status="",color="";
