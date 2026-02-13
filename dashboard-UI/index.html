@@ -208,11 +208,12 @@
   </div>
 </div>
 
-<!-- ================= SCANNER EDITOR ================= -->
-<div id="scanEditor" class="scan-editor-overlay hidden">
-  <div class="scan-card">
+<!-- SCAN POPUP MODAL -->
+<div id="scanEditor" class="scan-modal hidden">
 
-    <button class="scan-close" onclick="cancelScanEdit()">✕</button>
+  <div class="scan-modal-overlay" onclick="cancelScanEdit()"></div>
+
+  <div class="scan-modal-box">
 
     <h2>Scanned Item</h2>
 
@@ -225,18 +226,18 @@
     <label>Book Count</label>
     <input id="scanBook" type="number">
 
-    <label>Physical Count (Editable)</label>
+    <label>Physical Count</label>
     <input id="scanPhysical" type="number">
 
     <label>User Counts</label>
-    <div id="scanUsers"></div>
+    <div id="scanUsers" class="scan-users"></div>
 
     <label>Status</label>
-    <div id="scanStatus"></div>
+    <div id="scanStatus" class="scan-status"></div>
 
     <div class="scan-buttons">
-      <button onclick="saveScanEdit()">Save</button>
-      <button onclick="cancelScanEdit()">Cancel</button>
+      <button class="save-btn" onclick="saveScanEdit()">Save</button>
+      <button class="clear-btn" onclick="cancelScanEdit()">Cancel</button>
     </div>
 
   </div>
