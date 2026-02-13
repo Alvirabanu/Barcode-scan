@@ -843,52 +843,59 @@ function updateDeleteUI(){
 document.getElementById("stockUpload").addEventListener("change", handleStockUpload);
 
 async function handleStockUpload(e) {
+
   const file = e.target.files[0];
   if (!file) return;
 
+  showNotify("Reading Excel... ⏳");
+
   const reader = new FileReader();
 
-  reader.onload = async function(evt) {
-
-    showNotify("Uploading... Please wait ⏳");
+  reader.onload = async function(evt){
 
     const data = new Uint8Array(evt.target.result);
     const workbook = XLSX.read(data, { type: "array" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
 
-    let batch = [];
+    // 🔴 STEP 1: MERGE SAME BARCODES
+    const merged = {};
 
-    for (let i = 1; i < rows.length; i++) {
+    for(let i=1;i<rows.length;i++){
 
-      let barcode = rows[i][0]?.toString().replace(/\.0$/, '').trim();
-      let qty = parseInt(rows[i][1]);
-      let name = String(rows[i][2] || "");
+      let barcode = String(rows[i][0] || "")
+        .replace(/\.0$/,'')
+        .trim();
 
-      if (!barcode || isNaN(qty)) continue;
+      let qty = parseInt(rows[i][1]) || 0;
+      let name = String(rows[i][2] || "").trim();
 
-      batch.push({
-        barcode: barcode,
-        item_name: name,
-        book_count: qty
-      });
+      if(!barcode || qty<=0) continue;
 
-      // upload per 500 rows
-      if (batch.length === 500) {
-        await supabaseClient
-          .from("products")
-          .upsert(batch, { onConflict: "barcode" }); // 🔥 IMPORTANT
-        batch = [];
+      if(!merged[barcode]){
+        merged[barcode] = {
+          barcode: barcode,
+          item_name: name,
+          book_count: 0
+        };
       }
+
+      // ⭐ IMPORTANT → ADD counts
+      merged[barcode].book_count += qty;
     }
 
-    if (batch.length > 0) {
+    const products = Object.values(merged);
+
+    showNotify("Uploading " + products.length + " unique items... ⏳");
+
+    // 🔴 STEP 2: Upload in chunks
+    while(products.length){
       await supabaseClient
         .from("products")
-        .upsert(batch, { onConflict: "barcode" });
+        .upsert(products.splice(0,500), { onConflict:"barcode" });
     }
 
-    showNotify("Stock Updated Successfully ✔");
+    showNotify("Stock Upload Completed ✔");
 
     await loadMyBarcodes();
     await loadCommonSummary();
