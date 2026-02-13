@@ -773,3 +773,34 @@ td .delete {
   border:1px solid #d1d5db;
   margin-bottom:10px;
 }
+
+/* ===== SCAN EDITOR MODAL (REAL CENTER FIX) ===== */
+
+#scanEditor{
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 15000;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 16px;
+}
+
+/* the white popup card */
+#scanEditor .scan-editor-box{
+  width: 100%;
+  max-width: 380px;
+  border-radius: 16px;
+  background: white;
+  box-shadow: 0 25px 60px rgba(0,0,0,0.35);
+  animation: popupScale .18s ease;
+}
+
+
+@keyframes popupScale{
+  from{ transform:scale(.9); opacity:.5 }
+  to{ transform:scale(1); opacity:1 }
+}
