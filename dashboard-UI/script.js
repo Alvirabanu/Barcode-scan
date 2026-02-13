@@ -867,9 +867,15 @@ async function handleStockUpload(e) {
       ? String(nameCell).trim()
       : "";
 
-      let barcode = String(rows[i][0] || "")
-        .replace(/\.0$/,'')
-        .trim();
+      let rawBarcode = rows[i][0];
+      if(rawBarcode === undefined || rawBarcode === null) continue;
+      // ⭐ FIXES EXCEL SCIENTIFIC NOTATION
+      let barcode = String(rawBarcode)
+      .replace(/\.0$/,'')
+      .replace(/[^0-9]/g,'')   // keep only digits
+      .trim();
+      if(barcode.length < 6) continue; // ignore junk rows
+
 
       let rawQty = rows[i][1];
       // skip only if empty
