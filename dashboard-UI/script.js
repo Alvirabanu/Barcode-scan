@@ -869,7 +869,6 @@ async function handleStockUpload(e) {
       .replace(/\.0$/,'')
       .replace(/[^0-9]/g,'')   // keep only digits
       .trim();
-      if(barcode.length < 6) continue; // ignore junk rows
 
 
       let rawQty = rows[i][1];
