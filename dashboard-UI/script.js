@@ -163,16 +163,11 @@ function startRealtime(){
       { event: '*', schema: 'public', table: 'products' },
       payload => {
         console.log("Products changed", payload);
-        payload => {
-          if(!document.getElementById("my").classList.contains("hidden"))
-            loadMyBarcodes();
-          if(!document.getElementById("common").classList.contains("hidden"))
-            loadCommonSummary();
-          if(!document.getElementById("audit").classList.contains("hidden"))
-            loadAuditTable();
-          }
-
+        loadMyBarcodes();
+        loadCommonSummary();
+        loadAuditTable();
       }
+
     )
     .subscribe();
 
@@ -927,11 +922,14 @@ async function handleStockUpload(e) {
       .upsert(batch, { onConflict:"barcode" });
     }
 
-    showNotify("Stock Upload Completed ✔");
 
     await loadMyBarcodes();
     await loadCommonSummary();
     await loadAuditTable();
+
+    showNotify("Stock Upload Completed ✔");
+    // AUTO CLOSE POPUP
+    setTimeout(closeNotify, 1500);
   };
 
   reader.readAsArrayBuffer(file);
