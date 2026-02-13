@@ -500,7 +500,7 @@ async function openScanEditor(barcode){
   const { data: product } = await supabaseClient
     .from("products")
     .select("*")
-    .eq("barcode", barcode)
+    .eq("barcode", barcode.trim())
     .maybeSingle();
 
     const productSafe = product || null;
@@ -509,7 +509,7 @@ async function openScanEditor(barcode){
   const { data: scansData } = await supabaseClient
   .from("scans")
   .select("user_id, qty")
-  .eq("barcode", barcode);
+  .eq("barcode", barcode.trim())
   
   const scans = scansData || [];
 
@@ -1138,8 +1138,17 @@ async function openScanner() {
           beep.play().catch(()=>{});
 
           // open popup editor
-          await handleScannedBarcode(decodedText);
-
+          const barcode = normalizeBarcode(decodedText);
+          // anti-duplicate protection
+          const now = Date.now();
+          if(barcode === lastScanValue && (now - lastScanTimestamp) < 1500){
+            scanLock = false;
+            return;
+          }
+          lastScanValue = barcode;
+          lastScanTimestamp = now;
+          await handleScannedBarcode(barcode);
+        
         } catch(err) {
           console.error("SCAN ERROR:", err);
           scanLock = false;
@@ -1157,17 +1166,18 @@ async function openScanner() {
 
 
 function normalizeBarcode(code){
+  if(!code) return "";
+
   return String(code)
-    .replace(/\s+/g,'')  // remove spaces only
+    .replace(/\u0000/g,'')      // remove null char (scanner bug)
+    .replace(/\r/g,'')
+    .replace(/\n/g,'')
     .trim();
 }
 
 
 async function handleScannedBarcode(rawCode){
-
-  const barcode = normalizeBarcode(rawCode);
-
-  // open the real editor popup
+  const barcode = normalizeBarcode(rawCode).trim();
   await openScanEditor(barcode);
 }
 
