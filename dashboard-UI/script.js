@@ -518,7 +518,7 @@ async function openScanEditor(barcode){
   if(!product){
     document.getElementById("scanItemName").value = "";
     document.getElementById("scanBook").value = 0;
-    document.getElementById("scanPhysical").value = 1;
+    document.getElementById("scanPhysical").disabled = true;
     document.getElementById("scanUsers").innerText = "New Item";
     document.getElementById("scanStatus").innerText = "New";
     return;
@@ -557,46 +557,35 @@ async function saveScanEdit(){
   const barcode = document.getElementById("scanBarcode").value;
   const name = document.getElementById("scanItemName").value;
   const book = parseInt(document.getElementById("scanBook").value) || 0;
-  const physical = parseInt(document.getElementById("scanPhysical").value) || 0;
 
-  // 1️⃣ ensure product exists
+  // create product
   await supabaseClient
     .from("products")
-    .upsert({
+    .insert({
       barcode: barcode,
       item_name: name,
       book_count: book
-    },{ onConflict:"barcode" });
+    });
 
-  // 2️⃣ remove MY old scans
-  await supabaseClient
-    .from("scans")
-    .delete()
-    .eq("barcode", barcode)
-    .eq("user_id", currentUserId);
-
-  // 3️⃣ recreate MY physical count
-  const rows=[];
-  for(let i=0;i<physical;i++){
-    rows.push({ user_id:currentUserId, barcode:barcode, qty:1 });
-  }
-
-  while(rows.length){
-    await supabaseClient.from("scans").insert(rows.splice(0,500));
-  }
+  // FIRST SCAN (physical = 1)
+  await supabaseClient.from("scans").insert({
+    user_id: currentUserId,
+    barcode: barcode,
+    qty: 1
+  });
 
   document.getElementById("scanEditor").classList.add("hidden");
 
-  scanLock = false;   // IMPORTANT
+  savingScan = false;
+  scanLock = false;
 
   await loadMyBarcodes();
   await loadCommonSummary();
   await loadAuditTable();
 
-  savingScan = false;
-  // 🔥 REOPEN CAMERA AUTOMATICALLY
   openScanner();
 }
+
 
 function cancelScanEdit(){
   document.getElementById("scanEditor").classList.add("hidden");
@@ -1177,25 +1166,53 @@ async function openScanner() {
 
 
 function normalizeBarcode(code){
-  if(!code) return "";
+  let c = String(code).replace(/\D/g,'');
 
-  return String(code)
-    .replace(/\u0000/g,'')      // remove null char (scanner bug)
-    .replace(/\r/g,'')
-    .replace(/\n/g,'')
-    .trim();
+  // EAN padding fix (CRITICAL)
+  if(c.length === 12) c = "0" + c;
+
+  return c;
 }
+
 
 
 async function handleScannedBarcode(rawCode){
 
-  const barcode = normalizeBarcode(rawCode).trim();
+  const barcode = normalizeBarcode(rawCode);
 
-  // let browser breathe (VERY IMPORTANT)
-  setTimeout(async () => {
-    await openScanEditor(barcode);
-  }, 120);
+  // check product
+  const { data: product } = await supabaseClient
+    .from("products")
+    .select("*")
+    .eq("barcode", barcode)
+    .maybeSingle();
+
+  // ================= EXISTING ITEM =================
+  if(product){
+
+    // auto add 1 scan (NO POPUP)
+    await supabaseClient.from("scans").insert({
+      user_id: currentUserId,
+      barcode: barcode,
+      qty: 1
+    });
+
+    showNotify(`Scanned ✔  ${product.item_name || barcode}`);
+
+    await loadMyBarcodes();
+    await loadCommonSummary();
+    await loadAuditTable();
+
+    scanLock = false;
+    openScanner();   // immediately scan next item
+    return;
+  }
+
+  // ================= NEW ITEM =================
+  // only here popup should open
+  await openScanEditor(barcode);
 }
+
 
 
 async function savePhysicalCount(barcode, qty){
