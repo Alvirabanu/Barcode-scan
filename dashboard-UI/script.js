@@ -561,7 +561,9 @@ async function openScanEditor(barcode){
 
   // show MY editable count
   physicalInput.disabled = false;
-  physicalInput.value = myCount || 1;
+  // IMPORTANT: scanning means +1 item counted
+  physicalInput.value = (myCount || 0) + 1;
+
 
   // show grouped user counts
   let text = "";
@@ -578,6 +580,8 @@ async function openScanEditor(barcode){
   else status = `Excess ${totalPhysical - product.book_count}`;
 
   statusBox.innerText = status;
+  lastScanValue = barcodeClean;
+  lastScanTimestamp = Date.now();
 
   scanLock = false;
 }
