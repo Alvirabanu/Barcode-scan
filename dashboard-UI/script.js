@@ -862,6 +862,10 @@ async function handleStockUpload(e) {
     const merged = {};
 
     for(let i=1;i<rows.length;i++){
+      let nameCell = rows[i][2];
+      let name = (nameCell !== undefined && nameCell !== null)
+      ? String(nameCell).trim()
+      : "";
 
       let barcode = String(rows[i][0] || "")
         .replace(/\.0$/,'')
@@ -886,9 +890,13 @@ async function handleStockUpload(e) {
       if(!merged[barcode]){
         merged[barcode] = {
           barcode: barcode,
-          item_name: name,
+          item_name: name || null,
           book_count: 0
         };
+      }
+      // VERY IMPORTANT: do NOT overwrite existing name with blank
+      if(name && name.length > 0){
+        merged[barcode].item_name = name;
       }
 
       // ⭐ IMPORTANT → ADD counts
@@ -901,9 +909,16 @@ async function handleStockUpload(e) {
 
     // 🔴 STEP 2: Upload in chunks
     while(products.length){
+      const batch = products.splice(0,500);
+      // ⭐ DO NOT SEND EMPTY NAME TO DATABASE
+      batch.forEach(p=>{
+        if(!p.item_name || p.item_name.trim()===""){
+          delete p.item_name;
+        }
+      });
       await supabaseClient
-        .from("products")
-        .upsert(products.splice(0,500), { onConflict:"barcode" });
+      .from("products")
+      .upsert(batch, { onConflict:"barcode" });
     }
 
     showNotify("Stock Upload Completed ✔");
@@ -1018,9 +1033,16 @@ async function downloadMyBarcodesExcel(){
     const physical = physicalMap[p.barcode] || 0;
 
     let status="";
-    if(book === physical) status="Match";
-    else if(physical < book) status=`Short ${book-physical}`;
-    else status=`Excess ${physical-book}`;
+    let diff = physical - book;
+    if(diff === 0){
+      status="Match"; color="green";
+    }
+    else if(diff < 0){
+      status=`Short ${Math.abs(diff)}`; color="red";
+    }
+    else{
+      status=`Excess ${Math.abs(diff)}`; color="orange";
+    }
 
     rows.push({
       Barcode: p.barcode,
@@ -1079,9 +1101,17 @@ async function downloadCommonSummaryExcel(){
     const physical = physicalMap[p.barcode] || 0;
 
     let status="";
-    if(book === physical) status="Match";
-    else if(physical < book) status=`Short ${book-physical}`;
-    else status=`Excess ${physical-book}`;
+    let diff = physical - book;
+    if(diff === 0){
+      status="Match"; color="green";
+    }
+    else if(diff < 0){
+      status=`Short ${Math.abs(diff)}`; color="red";
+    }
+    else{
+      status=`Excess ${Math.abs(diff)}`; color="orange";
+    }
+
 
     // user counts text (SAME AS DASHBOARD)
     let userCounts = "-";
@@ -1357,19 +1387,17 @@ async function loadAuditTable(){
     const physical = physicalMap[code] || 0;
 
     let status="",color="";
-
-    if(book === physical){
-      status="Match";
-      color="green";
+    let diff = physical - book;
+    if(diff === 0){
+      status="Match"; color="green";
     }
-    else if(physical < book){
-      status=`Short ${book-physical}`;
-      color="red";
+    else if(diff < 0){
+      status=`Short ${Math.abs(diff)}`; color="red";
     }
     else{
-      status=`Excess ${physical-book}`;
-      color="orange";
+      status=`Excess ${Math.abs(diff)}`; color="orange";
     }
+
 
     const tr=document.createElement("tr");
     tr.innerHTML=`
