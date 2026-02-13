@@ -582,29 +582,43 @@ async function openScanEditor(barcode){
   scanLock = false;
 }
 
-
 async function saveScanEdit(){
 
-  const barcode = scanBarcode.value;
-  const name = scanItemName.value;
+  const barcode = scanBarcode.value.trim();
+  const name = scanItemName.value.trim();
   const book = parseInt(scanBook.value) || 0;
   const physical = parseInt(scanPhysical.value) || 0;
 
-  // ensure product
+  // 1️⃣ ensure product exists
   await supabaseClient.from("products").upsert({
     barcode: barcode,
     item_name: name,
     book_count: book
   },{ onConflict:"barcode" });
 
-  // update MY quantity
+  // 2️⃣ remove MY previous scans
   await supabaseClient
-  .from("scans")
-  .upsert({
-    barcode: barcode,
-    user_id: currentUserId,
-    qty: physical
-  }, { onConflict: 'barcode,user_id' });
+    .from("scans")
+    .delete()
+    .eq("barcode", barcode)
+    .eq("user_id", currentUserId);
+
+  // 3️⃣ recreate exact physical count
+  if(physical > 0){
+
+    const rows = [];
+    for(let i=0;i<physical;i++){
+      rows.push({
+        barcode: barcode,
+        user_id: currentUserId,
+        qty: 1
+      });
+    }
+
+    while(rows.length){
+      await supabaseClient.from("scans").insert(rows.splice(0,500));
+    }
+  }
 
   document.getElementById("scanEditor").classList.add("hidden");
 
@@ -612,11 +626,11 @@ async function saveScanEdit(){
   await loadCommonSummary();
   await loadAuditTable();
 
+  // reopen scanner
+  setTimeout(openScanner, 400);
+
   scanLock = false;
-  openScanner();
 }
-
-
 
 function cancelScanEdit(){
   document.getElementById("scanEditor").classList.add("hidden");
@@ -1193,52 +1207,18 @@ async function handleScannedBarcode(rawCode){
 
   const barcode = normalizeBarcode(rawCode);
 
-  // check product
-  const { data: product } = await supabaseClient
-    .from("products")
-    .select("*")
-    .eq("barcode", barcode)
-    .maybeSingle();
+  // play beep (guaranteed)
+  try{
+    beep.currentTime = 0;
+    await beep.play();
+  }catch(e){}
 
-  // if NEW PRODUCT → ask details
-  if(!product){
-    await openScanEditor(barcode);
-    return;
-  }
+  // ALWAYS OPEN EDITOR
+  await openScanEditor(barcode);
 
-  // EXISTING PRODUCT → just increase count
-  const { data: existing } = await supabaseClient
-    .from("scans")
-    .select("*")
-    .eq("barcode", barcode)
-    .eq("user_id", currentUserId)
-    .maybeSingle();
-
-  if(existing){
-    // increase quantity
-    await supabaseClient
-      .from("scans")
-      .update({ qty: existing.qty + 1 })
-      .eq("id", existing.id);
-  }else{
-    // first scan
-    await supabaseClient
-      .from("scans")
-      .insert({
-        barcode: barcode,
-        user_id: currentUserId,
-        qty: 1
-      });
-  }
-
-  await loadMyBarcodes();
-  await loadCommonSummary();
-  await loadAuditTable();
-
+  // unlock scanner
   scanLock = false;
-  openScanner();
 }
-
 
 
 async function savePhysicalCount(barcode, qty){
