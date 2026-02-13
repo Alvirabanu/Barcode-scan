@@ -804,3 +804,78 @@ td .delete {
   from{ transform:scale(.9); opacity:.5 }
   to{ transform:scale(1); opacity:1 }
 }
+
+/* ===== SCAN MODAL ===== */
+
+.scan-modal{
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scan-modal-overlay{
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(3px);
+}
+
+.scan-modal-box{
+  position: relative;
+  width: 92%;
+  max-width: 420px;
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: 0 25px 60px rgba(0,0,0,.35);
+  z-index: 2;
+  animation: pop .18s ease;
+}
+
+@keyframes pop{
+  from{ transform: scale(.92); opacity:0; }
+  to{ transform: scale(1); opacity:1; }
+}
+
+.scan-modal-box h2{
+  margin-bottom: 14px;
+  color:#0ea5a4;
+}
+
+.scan-modal-box label{
+  font-size:13px;
+  font-weight:600;
+  margin-top:10px;
+  display:block;
+}
+
+.scan-modal-box input{
+  width:100%;
+  padding:10px;
+  border-radius:10px;
+  border:1px solid #ddd;
+  margin-top:5px;
+}
+
+.scan-users{
+  background:#f3f4f6;
+  padding:10px;
+  border-radius:10px;
+  max-height:90px;
+  overflow:auto;
+  font-size:13px;
+}
+
+.scan-status{
+  font-weight:700;
+  margin-top:6px;
+}
+
+.scan-buttons{
+  display:flex;
+  gap:10px;
+  margin-top:16px;
+}
