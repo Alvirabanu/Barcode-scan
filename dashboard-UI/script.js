@@ -867,10 +867,21 @@ async function handleStockUpload(e) {
         .replace(/\.0$/,'')
         .trim();
 
-      let qty = parseInt(rows[i][1]) || 0;
-      let name = String(rows[i][2] || "").trim();
+      let rawQty = rows[i][1];
+      // skip only if empty
+      if(rawQty === "" || rawQty === null || rawQty === undefined) continue;
+      
+      // clean value (Excel safe)
+      rawQty = String(rawQty)
+      .replace(/\u2212/g,'-')       // excel unicode minus
+      .replace(/\((\d+)\)/,'-$1')   // (5) -> -5
+      .replace(/[^\d\-]/g,'');      // remove spaces
+      
+      let qty = Number(rawQty);
+      
+      // skip only if NaN
+      if(!barcode || Number.isNaN(qty)) continue;
 
-      if(!barcode || qty<=0) continue;
 
       if(!merged[barcode]){
         merged[barcode] = {
