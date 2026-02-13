@@ -492,105 +492,130 @@ async function loadCommonSummary(){
 
 async function openScanEditor(barcode){
 
-  document.getElementById("scanEditor").classList.remove("hidden");
+  const modal = document.getElementById("scanEditor");
+  modal.classList.remove("hidden");
 
-  document.getElementById("scanBarcode").value = barcode;
+  const barcodeClean = barcode.trim();
+  document.getElementById("scanBarcode").value = barcodeClean;
 
   // get product
   const { data: product } = await supabaseClient
     .from("products")
     .select("*")
-    .eq("barcode", barcode.trim())
+    .eq("barcode", barcodeClean)
     .maybeSingle();
 
-    const productSafe = product || null;
-
-  // get all scans
+  // get all scans of that barcode
   const { data: scansData } = await supabaseClient
-  .from("scans")
-  .select("user_id, qty")
-  .eq("barcode", barcode.trim())
-  
+    .from("scans")
+    .select("user_id, qty")
+    .eq("barcode", barcodeClean);
+
   const scans = scansData || [];
 
+  const itemName = document.getElementById("scanItemName");
+  const bookCount = document.getElementById("scanBook");
+  const physicalInput = document.getElementById("scanPhysical");
+  const usersBox = document.getElementById("scanUsers");
+  const statusBox = document.getElementById("scanStatus");
 
-  // NEW ITEM (not uploaded in excel)
+  /* ================= NEW ITEM ================= */
+
   if(!product){
-    document.getElementById("scanItemName").value = "";
-    document.getElementById("scanBook").value = 0;
-    document.getElementById("scanPhysical").disabled = true;
-    document.getElementById("scanUsers").innerText = "New Item";
-    document.getElementById("scanStatus").innerText = "New";
+
+    itemName.value = "";
+    bookCount.value = 0;
+
+    // IMPORTANT → editable
+    physicalInput.disabled = false;
+    physicalInput.value = 1;
+
+    usersBox.innerText = "New Item";
+    statusBox.innerText = "New";
+
     return;
   }
 
-  // existing item
-  document.getElementById("scanItemName").value = productSafe?.item_name || "";
-  document.getElementById("scanBook").value = productSafe?.book_count || 0;
+  /* ================= EXISTING ITEM ================= */
 
+  itemName.value = product.item_name || "";
+  bookCount.value = product.book_count || 0;
+
+  // ----------- GROUP USER COUNTS -----------
+  let userTotals = {};
   let totalPhysical = 0;
-  let userText = "";
+  let myCount = 0;
 
   scans.forEach(s=>{
     totalPhysical += s.qty;
-    userText += `${userMap[s.user_id] || "unknown"}: ${s.qty}\n`;
+
+    // group per user
+    if(!userTotals[s.user_id]) userTotals[s.user_id] = 0;
+    userTotals[s.user_id] += s.qty;
+
+    // MY COUNT ONLY
+    if(s.user_id === currentUserId){
+      myCount += s.qty;
+    }
   });
 
-  document.getElementById("scanPhysical").value = 1;
-  document.getElementById("scanUsers").innerText = userText || "-";
+  // show MY editable count
+  physicalInput.disabled = false;
+  physicalInput.value = myCount || 1;
 
-  const status = totalPhysical == productSafe?.book_count
-    ? "Match"
-    : totalPhysical < productSafe?.book_count
-      ? `Short ${productSafe?.book_count-totalPhysical}`
-      : `Excess ${totalPhysical-productSafe?.book_count}`;
+  // show grouped user counts
+  let text = "";
+  Object.entries(userTotals).forEach(([uid,count])=>{
+    text += `${userMap[uid] || "unknown"}: ${count}\n`;
+  });
 
-  document.getElementById("scanStatus").innerText = status;
+  usersBox.innerText = text || "-";
+
+  // STATUS calculation
+  let status = "";
+  if(totalPhysical === product.book_count) status = "Match";
+  else if(totalPhysical < product.book_count) status = `Short ${product.book_count - totalPhysical}`;
+  else status = `Excess ${totalPhysical - product.book_count}`;
+
+  statusBox.innerText = status;
+
   scanLock = false;
 }
 
+
 async function saveScanEdit(){
 
-  if(savingScan) return;
-  savingScan = true;
+  const barcode = scanBarcode.value;
+  const name = scanItemName.value;
+  const book = parseInt(scanBook.value) || 0;
+  const physical = parseInt(scanPhysical.value) || 0;
 
-  const barcode = document.getElementById("scanBarcode").value.trim();
-  const name = document.getElementById("scanItemName").value.trim();
-  const book = parseInt(document.getElementById("scanBook").value) || 0;
+  // ensure product
+  await supabaseClient.from("products").upsert({
+    barcode: barcode,
+    item_name: name,
+    book_count: book
+  },{ onConflict:"barcode" });
 
-  // create product only if not exists
-  const { data: exists } = await supabaseClient
-    .from("products")
-    .select("barcode")
-    .eq("barcode", barcode)
-    .maybeSingle();
-
-  if(!exists){
-    await supabaseClient.from("products").insert({
-      barcode,
-      item_name: name,
-      book_count: book
-    });
-  }
-
-  // first scan quantity
+  // update MY quantity
   await supabaseClient
-    .from("scans")
-    .upsert({
-      barcode: barcode,
-      user_id: currentUserId,
-      qty: 1
-    }, { onConflict: "barcode,user_id" });
+  .from("scans")
+  .upsert({
+    barcode: barcode,
+    user_id: currentUserId,
+    qty: physical
+  }, { onConflict: 'barcode,user_id' });
 
   document.getElementById("scanEditor").classList.add("hidden");
-
-  savingScan = false;
-  scanLock = false;
 
   await loadMyBarcodes();
   await loadCommonSummary();
   await loadAuditTable();
+
+  scanLock = false;
+  openScanner();
 }
+
 
 
 function cancelScanEdit(){
