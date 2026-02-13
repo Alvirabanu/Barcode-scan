@@ -207,6 +207,38 @@
   </div>
 </div>
 
+<!-- ================= SCANNER EDITOR ================= -->
+<div id="scanEditor" class="hidden scan-editor-overlay">
+  <div class="scan-editor-box">
+
+    <h2>Scanned Item</h2>
+
+    <label>Barcode</label>
+    <input id="scanBarcode" disabled>
+
+    <label>Item Name</label>
+    <input id="scanItemName">
+
+    <label>Book Count</label>
+    <input id="scanBook" type="number">
+
+    <label>Physical Count (Editable)</label>
+    <input id="scanPhysical" type="number">
+
+    <label>User Counts</label>
+    <div id="scanUsers"></div>
+
+    <label>Status</label>
+    <div id="scanStatus"></div>
+
+    <div class="scan-buttons">
+      <button onclick="saveScanEdit()">Save</button>
+      <button onclick="cancelScanEdit()">Cancel</button>
+    </div>
+
+  </div>
+</div>
+
 <!-- ================= EDIT MODAL ================= -->
 <div id="editModal" class="edit-modal hidden">
   <div class="edit-box">
@@ -224,7 +256,7 @@
     <label>Item Name</label>
     <input id="editNameInput" type="text">
 
-
+ 
     <div class="edit-actions">
       <button class="save-btn" onclick="saveEdit()">Save</button>
     </div>
