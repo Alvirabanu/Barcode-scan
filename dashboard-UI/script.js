@@ -429,15 +429,11 @@ async function loadCommonSummary(){
   .select("*", { count: "exact" });
   if(commonSearch){
     query = query.ilike("barcode", `%${commonSearch}%`);
-}
-
-const result = await query.range(from, to);
-const products = result.data || [];
-totalCommon = result.count || 0;
-
-
-
-
+  }
+  
+  const result = await query.range(from, to);
+  const products = result.data || [];
+  totalCommon = result.count || 0;
   // 2️⃣ All scans with users
   const { data: scans } = await supabaseClient
     .from("scans")
@@ -515,6 +511,107 @@ totalCommon = result.count || 0;
 
   renderCommonPagination();
   updateCommonDeleteUI();
+}
+
+async function openScanEditor(barcode){
+
+  document.getElementById("scanEditor").classList.remove("hidden");
+
+  document.getElementById("scanBarcode").value = barcode;
+
+  // get product
+  const { data: product } = await supabaseClient
+    .from("products")
+    .select("*")
+    .eq("barcode", barcode)
+    .maybeSingle();
+
+  // get all scans
+  const { data: scans } = await supabaseClient
+    .from("scans")
+    .select("user_id, qty")
+    .eq("barcode", barcode);
+
+  // NEW ITEM (not uploaded in excel)
+  if(!product){
+    document.getElementById("scanItemName").value = "";
+    document.getElementById("scanBook").value = 0;
+    document.getElementById("scanPhysical").value = 1;
+    document.getElementById("scanUsers").innerText = "New Item";
+    document.getElementById("scanStatus").innerText = "New";
+    return;
+  }
+
+  // existing item
+  document.getElementById("scanItemName").value = product.item_name || "";
+  document.getElementById("scanBook").value = product.book_count || 0;
+
+  let totalPhysical = 0;
+  let userText = "";
+
+  scans.forEach(s=>{
+    totalPhysical += s.qty;
+    userText += `${userMap[s.user_id] || "unknown"}: ${s.qty}\n`;
+  });
+
+  document.getElementById("scanPhysical").value = totalPhysical;
+  document.getElementById("scanUsers").innerText = userText || "-";
+
+  const status = totalPhysical == product.book_count
+    ? "Match"
+    : totalPhysical < product.book_count
+      ? `Short ${product.book_count-totalPhysical}`
+      : `Excess ${totalPhysical-product.book_count}`;
+
+  document.getElementById("scanStatus").innerText = status;
+}
+
+async function saveScanEdit(){
+
+  const barcode = document.getElementById("scanBarcode").value;
+  const name = document.getElementById("scanItemName").value;
+  const book = parseInt(document.getElementById("scanBook").value) || 0;
+  const physical = parseInt(document.getElementById("scanPhysical").value) || 0;
+
+  // 1️⃣ ensure product exists
+  await supabaseClient
+    .from("products")
+    .upsert({
+      barcode: barcode,
+      item_name: name,
+      book_count: book
+    },{ onConflict:"barcode" });
+
+  // 2️⃣ remove MY old scans
+  await supabaseClient
+    .from("scans")
+    .delete()
+    .eq("barcode", barcode)
+    .eq("user_id", currentUserId);
+
+  // 3️⃣ recreate MY physical count
+  const rows=[];
+  for(let i=0;i<physical;i++){
+    rows.push({ user_id:currentUserId, barcode:barcode, qty:1 });
+  }
+
+  while(rows.length){
+    await supabaseClient.from("scans").insert(rows.splice(0,500));
+  }
+
+  document.getElementById("scanEditor").classList.add("hidden");
+
+  await loadMyBarcodes();
+  await loadCommonSummary();
+  await loadAuditTable();
+
+  // 🔥 REOPEN CAMERA AUTOMATICALLY
+  openScanner();
+}
+
+function cancelScanEdit(){
+  document.getElementById("scanEditor").classList.add("hidden");
+  openScanner();
 }
 
 // COMMON PAGE NUMBER //
@@ -757,15 +854,17 @@ async function handleStockUpload(e) {
 
   reader.onload = async function(evt) {
 
+    showNotify("Uploading... Please wait ⏳");
+
     const data = new Uint8Array(evt.target.result);
     const workbook = XLSX.read(data, { type: "array" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
 
     let batch = [];
 
     for (let i = 1; i < rows.length; i++) {
+
       let barcode = String(rows[i][0]).trim();
       let qty = parseInt(rows[i][1]);
       let name = String(rows[i][2] || "");
@@ -778,27 +877,30 @@ async function handleStockUpload(e) {
         book_count: qty
       });
 
-      // insert in chunks of 500
+      // upload per 500 rows
       if (batch.length === 500) {
-        await supabaseClient.from("products").upsert(batch);
+        await supabaseClient
+          .from("products")
+          .upsert(batch, { onConflict: "barcode" }); // 🔥 IMPORTANT
         batch = [];
       }
     }
 
     if (batch.length > 0) {
-      await supabaseClient.from("products").upsert(batch);
+      await supabaseClient
+        .from("products")
+        .upsert(batch, { onConflict: "barcode" });
     }
 
-    showNotify("Upload completed ✔");
+    showNotify("Stock Updated Successfully ✔");
 
-    loadMyBarcodes();
-    loadCommonSummary();
-    loadAuditTable();
+    await loadMyBarcodes();
+    await loadCommonSummary();
+    await loadAuditTable();
   };
 
   reader.readAsArrayBuffer(file);
 }
-
 
  // COMPARE EXCEL //
 async function compareStock() {
@@ -912,9 +1014,6 @@ async function downloadMyBarcodesExcel(){
       "Book Count": book,
       "Physical Count": physical,
       Status: status,
-      "Last Scanned": lastScanMap[p.barcode]
-        ? new Date(lastScanMap[p.barcode]).toLocaleString()
-        : "-"
     });
 
   });
@@ -1020,20 +1119,17 @@ async function openScanner() {
     await html5QrCode.start(
       { facingMode: "environment" },
       { fps: 10, qrbox: { width: 250, height: 150 } },
-      (decodedText) => {
-        const now = Date.now();
-        // prevent same barcode rapid fire
-        if (decodedText === lastScannedCode && now - lastScanTime < 1500) {
-          return;
-        }
-        lastScannedCode = decodedText;
-        lastScanTime = now;
-        // 🔊 BEEP
+       (decodedText) => {
+        // 🔴 STOP CAMERA IMMEDIATELY
+        closeScanner(true);
+        
         beep.currentTime = 0;
         beep.play().catch(() => {});
-        // Auto save
-        autoSaveBarcode(decodedText);
+        
+        // open scan popup instead of saving
+        openScanEditor(decodedText);
       }
+
 
     );
   } catch (err) {
