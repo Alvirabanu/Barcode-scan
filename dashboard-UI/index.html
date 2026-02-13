@@ -198,6 +198,7 @@
   <div class="scanner-box">
     <div class="scanner-frame">
       <div id="reader"></div>
+      <div id="scanFeedback" class="scan-feedback"></div>
     </div>
 
     <h3 class="scanner-title">Point camera at barcode</h3>
@@ -208,8 +209,10 @@
 </div>
 
 <!-- ================= SCANNER EDITOR ================= -->
-<div id="scanEditor" class="hidden">
-  <div class="scan-editor-box">
+<div id="scanEditor" class="scan-editor-overlay hidden">
+  <div class="scan-card">
+
+    <button class="scan-close" onclick="cancelScanEdit()">✕</button>
 
     <h2>Scanned Item</h2>
 
