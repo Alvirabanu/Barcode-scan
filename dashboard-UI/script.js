@@ -554,25 +554,33 @@ async function saveScanEdit(){
   if(savingScan) return;
   savingScan = true;
 
-  const barcode = document.getElementById("scanBarcode").value;
-  const name = document.getElementById("scanItemName").value;
+  const barcode = document.getElementById("scanBarcode").value.trim();
+  const name = document.getElementById("scanItemName").value.trim();
   const book = parseInt(document.getElementById("scanBook").value) || 0;
 
-  // create product
-  await supabaseClient
+  // create product only if not exists
+  const { data: exists } = await supabaseClient
     .from("products")
-    .insert({
-      barcode: barcode,
+    .select("barcode")
+    .eq("barcode", barcode)
+    .maybeSingle();
+
+  if(!exists){
+    await supabaseClient.from("products").insert({
+      barcode,
       item_name: name,
       book_count: book
     });
+  }
 
-  // FIRST SCAN (physical = 1)
-  await supabaseClient.from("scans").insert({
-    user_id: currentUserId,
-    barcode: barcode,
-    qty: 1
-  });
+  // first scan quantity
+  await supabaseClient
+    .from("scans")
+    .upsert({
+      barcode: barcode,
+      user_id: currentUserId,
+      qty: 1
+    }, { onConflict: "barcode,user_id" });
 
   document.getElementById("scanEditor").classList.add("hidden");
 
@@ -582,8 +590,6 @@ async function saveScanEdit(){
   await loadMyBarcodes();
   await loadCommonSummary();
   await loadAuditTable();
-
-  openScanner();
 }
 
 
@@ -765,36 +771,20 @@ async function saveEdit(){
     return;
   }
 
-  // 1️⃣ update item name only in master table
+  // update product name
   await supabaseClient
     .from("products")
     .update({ item_name: name })
     .eq("barcode", barcode);
 
-  // 2️⃣ delete my old scans for this barcode
+  // 🔴 REAL INVENTORY UPDATE
   await supabaseClient
     .from("scans")
-    .delete()
-    .eq("user_id", currentUserId)
-    .eq("barcode", barcode);
-
-  // 3️⃣ recreate scans to match quantity (physical count)
-  if(qty > 0){
-
-    const rows = [];
-    for(let i=0;i<qty;i++){
-      rows.push({
-        user_id: currentUserId,
-        barcode: barcode,
-        qty: 1
-      });
-    }
-
-    // insert in chunks (important for supabase)
-    while(rows.length){
-      await supabaseClient.from("scans").insert(rows.splice(0,500));
-    }
-  }
+    .upsert({
+      barcode: barcode,
+      user_id: currentUserId,
+      qty: qty
+    }, { onConflict: "barcode,user_id" });
 
   closeEditModal();
 
@@ -1146,7 +1136,7 @@ async function openScanner() {
 
           // allow camera to release before popup
           setTimeout(() => {
-            openScanEditor(barcode);
+            handleScannedBarcode(barcode);
           }, 150);
 
         } catch (err) {
@@ -1174,8 +1164,6 @@ function normalizeBarcode(code){
   return c;
 }
 
-
-
 async function handleScannedBarcode(rawCode){
 
   const barcode = normalizeBarcode(rawCode);
@@ -1187,30 +1175,43 @@ async function handleScannedBarcode(rawCode){
     .eq("barcode", barcode)
     .maybeSingle();
 
-  // ================= EXISTING ITEM =================
-  if(product){
-
-    // auto add 1 scan (NO POPUP)
-    await supabaseClient.from("scans").insert({
-      user_id: currentUserId,
-      barcode: barcode,
-      qty: 1
-    });
-
-    showNotify(`Scanned ✔  ${product.item_name || barcode}`);
-
-    await loadMyBarcodes();
-    await loadCommonSummary();
-    await loadAuditTable();
-
-    scanLock = false;
-    openScanner();   // immediately scan next item
+  // if NEW PRODUCT → ask details
+  if(!product){
+    await openScanEditor(barcode);
     return;
   }
 
-  // ================= NEW ITEM =================
-  // only here popup should open
-  await openScanEditor(barcode);
+  // EXISTING PRODUCT → just increase count
+  const { data: existing } = await supabaseClient
+    .from("scans")
+    .select("*")
+    .eq("barcode", barcode)
+    .eq("user_id", currentUserId)
+    .maybeSingle();
+
+  if(existing){
+    // increase quantity
+    await supabaseClient
+      .from("scans")
+      .update({ qty: existing.qty + 1 })
+      .eq("id", existing.id);
+  }else{
+    // first scan
+    await supabaseClient
+      .from("scans")
+      .insert({
+        barcode: barcode,
+        user_id: currentUserId,
+        qty: 1
+      });
+  }
+
+  await loadMyBarcodes();
+  await loadCommonSummary();
+  await loadAuditTable();
+
+  scanLock = false;
+  openScanner();
 }
 
 
