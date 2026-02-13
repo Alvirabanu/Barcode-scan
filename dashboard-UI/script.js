@@ -589,36 +589,21 @@ async function saveScanEdit(){
   const book = parseInt(scanBook.value) || 0;
   const physical = parseInt(scanPhysical.value) || 0;
 
-  // 1️⃣ ensure product exists
+  // 1. ensure product
   await supabaseClient.from("products").upsert({
     barcode: barcode,
     item_name: name,
     book_count: book
-  },{ onConflict:"barcode" });
+  }, { onConflict: "barcode" });
 
-  // 2️⃣ remove MY previous scans
+  // 2. ONLY ONE ROW PER USER
   await supabaseClient
     .from("scans")
-    .delete()
-    .eq("barcode", barcode)
-    .eq("user_id", currentUserId);
-
-  // 3️⃣ recreate exact physical count
-  if(physical > 0){
-
-    const rows = [];
-    for(let i=0;i<physical;i++){
-      rows.push({
-        barcode: barcode,
-        user_id: currentUserId,
-        qty: 1
-      });
-    }
-
-    while(rows.length){
-      await supabaseClient.from("scans").insert(rows.splice(0,500));
-    }
-  }
+    .upsert({
+      barcode: barcode,
+      user_id: currentUserId,
+      qty: physical
+    }, { onConflict: "barcode,user_id" });
 
   document.getElementById("scanEditor").classList.add("hidden");
 
@@ -626,9 +611,7 @@ async function saveScanEdit(){
   await loadCommonSummary();
   await loadAuditTable();
 
-  // reopen scanner
-  setTimeout(openScanner, 400);
-
+  setTimeout(openScanner, 300);
   scanLock = false;
 }
 
@@ -1298,19 +1281,17 @@ function closeScanner(force = false) {
 
 // ================= LOAD AUDIT TABLE =================
 async function loadAuditTable(){
-
   const tbody = document.getElementById("auditBody");
   tbody.innerHTML = "";
-
+  
   const res = await supabaseClient
   .from("products")
   .select("*", { count: "exact", head: true });
   const count = res.count || 0;
   totalAudit = count || 0;
-
+  
   const maxPage = Math.max(1, Math.ceil(totalAudit / PAGE_SIZE));
   if(auditPage > maxPage) auditPage = maxPage;
-
 
   // 1️⃣ Uploaded stock (BOOK COUNT)
   const from = (auditPage - 1) * PAGE_SIZE;
@@ -1319,14 +1300,12 @@ async function loadAuditTable(){
   .from("products")
   .select("*", { count: "exact" });
   if(auditSearch){
-  query = query.ilike("barcode", `%${auditSearch}%`);
-}
-
-const result = await query.range(from, to);
-const products = result.data || [];
-totalAudit = result.count || 0;
-
-
+    query = query.ilike("barcode", `%${auditSearch}%`);
+  }
+  
+  const result = await query.range(from, to);
+  const products = result.data || [];
+  totalAudit = result.count || 0;
 
   // 2️⃣ All users scans (PHYSICAL COUNT)
   const { data: allScans } = await supabaseClient
@@ -1350,8 +1329,9 @@ totalAudit = result.count || 0;
 
     const product = products.find(p=>p.barcode === code);
 
-    const book = product ? (productSafe?.book_count || 0) : 0;
-    const name = product ? (productSafe?.item_name || "-") : "-";
+    const book = product ? (product.book_count || 0) : 0;
+    const name = product ? (product.item_name || "-") : "-";
+
     const physical = physicalMap[code] || 0;
 
     let status="",color="";
