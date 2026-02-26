@@ -1,10 +1,18 @@
 // ================= SUPABASE SETUP =================
 const SUPABASE_URL = "https://gunkkbepdlsdwgxgpcxj.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable__peI72hPciL0iaBVn0odIg_Uv6D1OTz";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd1bmtrYmVwZGxzZHdneGdwY3hqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk5NDgxNzEsImV4cCI6MjA4NTUyNDE3MX0.0GKBF8z5bxNbV-bahSktW3Xt2KoVaH5Pkmuhj9mjkSE";
 
 const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
-  SUPABASE_ANON_KEY
+  SUPABASE_ANON_KEY,
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: window.localStorage
+    }
+  }
 );
 
 let scanLock = false;
