@@ -53,6 +53,7 @@ let totalAudit = 0;
 let totalProducts = 0;
 let html5QrCode = null;
 let scannedCode = null;
+let scanSession = false;
 let userMap = {};
 let userReady = false; // ✅ ADDED
 let scannerReady = false; // ✅ ADD THIS LINE ONLY
@@ -271,7 +272,8 @@ async function loadMyBarcodes(){
   
   let query = supabaseClient
   .from("products")
-  .select("*", { count: "exact" });
+  .select("*", { count: "exact" })
+  .order("last_activity", { ascending: false });
   if(mySearch){
     query = query.ilike("barcode", `%${mySearch}%`);
   }
@@ -398,7 +400,8 @@ async function loadCommonSummary(){
   const to = from + PAGE_SIZE - 1;
   let query = supabaseClient
   .from("products")
-  .select("*", { count: "exact" });
+  .select("*", { count: "exact" })
+  .order("last_activity", { ascending: false });
   if(commonSearch){
     query = query.ilike("barcode", `%${commonSearch}%`);
   }
@@ -528,6 +531,8 @@ async function openScanEditor(barcode){
     usersBox.innerText = "New Item";
     statusBox.innerText = "New";
 
+    scanSession = false;
+
     return;
   }
 
@@ -595,6 +600,11 @@ async function saveScanEdit(){
     book_count: book
   }, { onConflict: "barcode" });
 
+  await supabaseClient
+  .from("products")
+  .update({ last_activity: new Date().toISOString() })
+  .eq("barcode", barcode);
+
   // 2. ONLY ONE ROW PER USER
   await supabaseClient
     .from("scans")
@@ -605,19 +615,29 @@ async function saveScanEdit(){
     }, { onConflict: "barcode,user_id" });
 
   document.getElementById("scanEditor").classList.add("hidden");
+  scanLock = false;
 
   await loadMyBarcodes();
   await loadCommonSummary();
   await loadAuditTable();
 
-  setTimeout(openScanner, 300);
+  // reopen camera ONLY if this was a scan
+  if(scanSession){
+    setTimeout(openScanner, 300);
+  }
+  
+  scanSession = false;
   scanLock = false;
 }
 
 function cancelScanEdit(){
   document.getElementById("scanEditor").classList.add("hidden");
+
+  // VERY IMPORTANT
+  scanSession = false;
   scanLock = false;
-  openScanner();
+
+  // DO NOT reopen camera
 }
 
 
@@ -1199,7 +1219,7 @@ async function openScanner() {
           beep.currentTime = 0;
           beep.play().catch(()=>{});
 
-          const barcode = normalizeBarcode(decodedText);
+          const barcode = decodedText.trim();
 
           // duplicate scan protection
           const now = Date.now();
@@ -1232,18 +1252,18 @@ async function openScanner() {
 }
 
 
-function normalizeBarcode(code){
-  let c = String(code).replace(/\D/g,'');
+// function normalizeBarcode(code){
+//   let c = String(code).replace(/\D/g,'');
 
-  // EAN padding fix (CRITICAL)
-  if(c.length === 12) c = "0" + c;
+//   // EAN padding fix (CRITICAL)
+//   if(c.length === 12) c = "0" + c;
 
-  return c;
-}
+//   return c;
+// }
 
 async function handleScannedBarcode(rawCode){
 
-  const barcode = normalizeBarcode(rawCode);
+  const barcode = rawCode.trim();
 
   // play beep (guaranteed)
   try{
@@ -1252,6 +1272,7 @@ async function handleScannedBarcode(rawCode){
   }catch(e){}
 
   // ALWAYS OPEN EDITOR
+  scanSession = true;
   await openScanEditor(barcode);
 
   // unlock scanner
@@ -1353,7 +1374,8 @@ async function loadAuditTable(){
   const to = from + PAGE_SIZE - 1;
   let query = supabaseClient
   .from("products")
-  .select("*", { count: "exact" });
+  .select("*", { count: "exact" })
+  .order("last_activity", { ascending: false });
   if(auditSearch){
     query = query.ilike("barcode", `%${auditSearch}%`);
   }
